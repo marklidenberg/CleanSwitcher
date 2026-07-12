@@ -155,22 +155,15 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
         self.verticalLayout = vertical
         self.secondaryShown = secondaryShown
 
-        // - Pick the screen under the cursor
+        // - Size icons and pack per row for the target screen
 
-        let mouseLocation = NSEvent.mouseLocation
-        let targetScreen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first!
-        let screenFrame = targetScreen.visibleFrame
-
-        maxPanelWidth = screenFrame.width * screenMarginPercent
-        let availableWidth = maxPanelWidth - panelPadding * 2
-
-        // - Size icons and pack per row
-
+        let screen = targetScreen()
         if vertical {
             itemSize = verticalIconSize
             itemsPerRow = 1
         } else {
-            itemSize = iconSize(for: targetScreen)
+            itemSize = iconSize(for: screen)
+            let availableWidth = maxPanelWidth - panelPadding * 2
             itemsPerRow = max(1, Int(floor((availableWidth + itemSpacing) / (itemSize + itemSpacing))))
         }
 
@@ -194,14 +187,48 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
             updateSelectionVisuals()
         }
 
-        // - Size to content and center on the target screen
+        sizeAndCenter(on: screen.visibleFrame)
+        present()
+    }
 
+    /// Show a non-interactive placeholder (e.g. "No open windows"). No selectable
+    /// items — releasing Cmd, Escape, or a click just dismisses.
+    func showPlaceholder(_ text: String) {
+        clearAppViews()
+        verticalLayout = true
+        secondaryShown = false
+        selectedRow = -1
+        selectedColumn = -1
+
+        let screen = targetScreen()
+
+        let label = NSTextField(labelWithString: text)
+        label.font = NSFont.systemFont(ofSize: 15, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .center
+        verticalStackView.addArrangedSubview(label)
+
+        sizeAndCenter(on: screen.visibleFrame)
+        present()
+    }
+
+    /// The screen under the cursor; also sets `maxPanelWidth` from it.
+    private func targetScreen() -> NSScreen {
+        let mouseLocation = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first!
+        maxPanelWidth = screen.visibleFrame.width * screenMarginPercent
+        return screen
+    }
+
+    /// Size to content and center on `screenFrame`.
+    private func sizeAndCenter(on screenFrame: NSRect) {
         let size = contentSize()
         setFrame(NSRect(x: screenFrame.midX - size.width / 2, y: screenFrame.midY - size.height / 2,
                         width: size.width, height: size.height), display: true)
+    }
 
-        // - Reset hover, then show with click shields
-
+    /// Reset hover state, then show with click shields.
+    private func present() {
         deadZoneInitialPosition = nil
         isAllowedToMouseHover = false
         cancelHoverSuppression()

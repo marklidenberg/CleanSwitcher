@@ -15,6 +15,8 @@ secondary  older apps/windows          faded + smaller; toggled with T
 - **Horizontal** (app switcher): a grid of bare icon tiles, packed
   `itemsPerRow` wide. Icons scale to the target screen's height.
 - **Vertical** (window switcher): a single column of `[icon] [name]` rows.
+- **Placeholder** (`showPlaceholder`): a single centered label with no selectable
+  items (e.g. "No open windows"); any activation key or click just dismisses.
 
 ## Invariants
 
