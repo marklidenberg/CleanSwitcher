@@ -5,18 +5,6 @@ A minimal Cmd+Tab replacement for macOS.
 - **Hides apps you haven't used recently** — the switcher shows your recent apps, with older ones one keypress away (Cmd+T).
 - **A clean window switcher** — Cmd+«key left of 1» cycles the current app's windows.
 
-## Before
-
-![Before](docs/images/before.png)
-
-## After
-
-![After](docs/images/after.png)
-
-## Windows
-
-![Windows](docs/images/windows.png)
-
 ## Install
 
 ```bash
@@ -24,13 +12,6 @@ curl -fsSL https://raw.githubusercontent.com/marklidenberg/CleanSwitcher/main/in
 ```
 
 Ad-hoc signed, not notarized.
-
-## Build
-
-```bash
-swift build -c release
-scripts/build-app.sh release   # produces CleanSwitcher.app
-```
 
 ## Shortcuts
 
@@ -45,6 +26,21 @@ scripts/build-app.sh release   # produces CleanSwitcher.app
 | H | Hide other apps |
 | Q | Quit app |
 | W | Close window |
+
+## How it looks
+
+### Before (native MacOS Switcher)
+
+![Before](docs/images/before.png)
+
+### After (CleanSwitcher)
+
+![After](docs/images/after.png)
+
+### Windows Switcher (CleanSwitcher)
+
+![Windows](docs/images/windows.png)
+
 
 ## Credits
 
