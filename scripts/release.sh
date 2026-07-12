@@ -52,7 +52,7 @@ fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$PLIST"
 
 git commit -m "chore(release): $TAG" -- "$PLIST"
-git tag "$TAG"
+git tag -a "$TAG" -m "$TAG"   # annotated, so --follow-tags actually pushes it
 
 # - Push the commit and the tag
 
