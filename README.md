@@ -19,10 +19,10 @@ Ad-hoc signed, not notarized.
 |-----|--------|
 | Cmd+Tab | Open app switcher |
 | Cmd+«key left of 1» | Open window switcher |
-| T | Toggle older apps |
-| H | Hide other apps |
-| Q | Quit app |
-| W | Close window |
+| Cmd+T | Toggle older apps |
+| Cmd+H | Hide other apps |
+| Cmd+Q | Quit app |
+| Cmd+W | Close window |
 
 ## How it looks
 
