@@ -1,9 +1,10 @@
 #!/bin/bash
-# release.sh — build CleanSwitcher.app, zip it, and publish a GitHub release
+# release.sh — bump the version, commit & tag it, push, then publish a GitHub release
 #
 # Usage:
-#   ./scripts/release.sh            # release the version in Info.plist
-#   ./scripts/release.sh 1.2.0      # bump Info.plist to 1.2.0, then release
+#   ./scripts/release.sh            # bump patch (default), e.g. 1.0.0 -> 1.0.1
+#   ./scripts/release.sh minor      # bump minor,           e.g. 1.0.1 -> 1.1.0
+#   ./scripts/release.sh major      # bump major,           e.g. 1.1.0 -> 2.0.0
 
 set -euo pipefail
 
@@ -15,26 +16,47 @@ PLIST="$PROJECT_DIR/Info.plist"
 
 cd "$PROJECT_DIR"
 
-# - Resolve the version (bump Info.plist if one is passed)
+# - Refuse to release from a dirty tree (releases build from the working tree)
 
-if [ "${1:-}" != "" ]; then
-    VERSION="$1"
-    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
-    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$PLIST"
-    echo "Bumped Info.plist to $VERSION"
-else
-    VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+if [ -n "$(git status --porcelain)" ]; then
+    echo "ERROR: working tree is dirty. Commit or stash first."
+    exit 1
 fi
 
+# - Compute the new version
+
+CURRENT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+IFS='.' read -r major minor patch <<< "$CURRENT"
+major="${major:-0}"; minor="${minor:-0}"; patch="${patch:-0}"
+
+case "${1:-patch}" in
+    major) VERSION="$((major + 1)).0.0" ;;
+    minor) VERSION="$major.$((minor + 1)).0" ;;
+    patch) VERSION="$major.$minor.$((patch + 1))" ;;
+    *)     echo "ERROR: unknown bump '$1' (expected major, minor, or patch)"; exit 1 ;;
+esac
+
 TAG="v$VERSION"
-echo "Releasing $TAG"
+echo "Releasing $CURRENT -> $TAG"
 
 # - Refuse to clobber an existing release
 
 if gh release view "$TAG" >/dev/null 2>&1; then
-    echo "ERROR: release $TAG already exists. Bump the version first."
+    echo "ERROR: release $TAG already exists."
     exit 1
 fi
+
+# - Bump Info.plist, commit, and tag
+
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$PLIST"
+
+git commit -m "chore(release): $TAG" -- "$PLIST"
+git tag "$TAG"
+
+# - Push the commit and the tag
+
+git push --follow-tags
 
 # - Build the release app bundle
 
