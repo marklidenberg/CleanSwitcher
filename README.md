@@ -37,7 +37,7 @@ Ad-hoc signed, not notarized.
 
 ![After](docs/images/after.png)
 
-### Windows Switcher (CleanSwitcher)
+### Windows (CleanSwitcher)
 
 ![Windows](docs/images/windows.png)
 
