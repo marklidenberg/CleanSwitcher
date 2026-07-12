@@ -71,6 +71,12 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
         return min(max(scaled, baseItemSize), maxItemSize)
     }
 
+    /// Divider tint that reads on the current appearance's glass.
+    private var separatorColor: NSColor {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(0.22)
+    }
+
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 132),
@@ -148,7 +154,6 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
         separator = NSView()
         separator.translatesAutoresizingMaskIntoConstraints = false
         separator.wantsLayer = true
-        separator.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.18).cgColor
         NSLayoutConstraint.activate([
             separator.heightAnchor.constraint(equalToConstant: 1),
             separator.widthAnchor.constraint(equalToConstant: 60),
@@ -179,6 +184,7 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
         mainRowCount = addRows(for: main, secondary: false)
         if !secondary.isEmpty {
             separator.isHidden = !secondaryShown
+            separator.layer?.backgroundColor = separatorColor.cgColor
             verticalStackView.addArrangedSubview(separator)
             addRows(for: secondary, secondary: true)
         }
