@@ -2,8 +2,8 @@
 
 A minimal Cmd+Tab replacement for macOS.
 
-- **Hides apps you haven't used recently** — the switcher shows your recent apps, with older ones one keypress away (Cmd+T).
-- **A clean window switcher** — Cmd+«key left of 1» cycles the current app's windows.
+- Hides apps you haven't used recently
+- Clean vertical window switcher
 
 ## Install
 
