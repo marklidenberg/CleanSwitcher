@@ -34,3 +34,8 @@
 **/*.xcodeproj
 **/*.xcworkspace
 **/DerivedData
+
+# - Forbid the linked skills-tree
+
+.claude/skills-tree
+.claude/skills/skills-tree.*
