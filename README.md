@@ -19,10 +19,7 @@ Ad-hoc signed, not notarized.
 |-----|--------|
 | Cmd+Tab | Open app switcher |
 | Cmd+«key left of 1» | Open window switcher |
-| Tab / Shift+Tab / arrows | Navigate (hold to repeat) |
 | T | Toggle older apps |
-| Return / release Cmd | Activate |
-| Escape | Dismiss |
 | H | Hide other apps |
 | Q | Quit app |
 | W | Close window |
