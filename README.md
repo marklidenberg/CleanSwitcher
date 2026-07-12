@@ -15,7 +15,7 @@ Ad-hoc signed, not notarized.
 
 ## Shortcuts
 
-| Key | Action |
+| | |
 |-----|--------|
 | Cmd+Tab | Open app switcher |
 | Cmd+«key left of 1» | Open window switcher |
