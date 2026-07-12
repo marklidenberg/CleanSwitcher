@@ -1,0 +1,36 @@
+
+# - Ignore all files by default
+
+**/*.*
+
+# - Allow subdirectories with a dot
+
+!**/*.*/
+
+# - Allow some extensions
+
+!**/*.swift
+!**/*.plist
+!**/*.md
+!**/*.sh
+!**/*.json
+!**/*.yaml
+!**/*.yml
+!**/*.toml
+!**/*.txt
+!**/*.png
+!**/*.svg
+!**/*.entitlements
+
+# - Allow some dot files
+
+!**/.gitignore
+!**/.gitattributes
+
+# - Forbid build artifacts
+
+**/.build
+**/*.app
+**/*.xcodeproj
+**/*.xcworkspace
+**/DerivedData

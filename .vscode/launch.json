@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:clean-tab}",
+            "name": "Debug CleanSwitcher",
+            "target": "CleanSwitcher",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug CleanSwitcher"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:clean-tab}",
+            "name": "Release CleanSwitcher",
+            "target": "CleanSwitcher",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release CleanSwitcher"
+        }
+    ]
+}
