@@ -23,6 +23,13 @@ if [ -n "$(git status --porcelain)" ]; then
     exit 1
 fi
 
+# - Refuse to re-release the same commit (idempotent: HEAD is already a release)
+
+if git log -1 --pretty=%s | grep -q '^chore(release): '; then
+    echo "ERROR: HEAD is already a release commit ($(git log -1 --pretty=%s)). Make changes first."
+    exit 1
+fi
+
 # - Compute the new version
 
 CURRENT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
