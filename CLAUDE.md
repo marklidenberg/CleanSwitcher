@@ -58,6 +58,29 @@ code here
 code here
 ```
 
+Indentation always RESETS the counter — a nested block starts back at `// -`, it does not keep counting from the parent's depth:
+
+- Good:
+  ```swift
+  // - Create the account
+
+  db.transaction {
+      // - Insert the user row   (reset to `-` at the new indentation)
+
+      ...
+  }
+  ```
+- Bad:
+  ```swift
+  // - Create the account
+
+  db.transaction {
+      // -- Insert the user row   (wrong: kept counting from the outer level)
+
+      ...
+  }
+  ```
+
 Example:
 
 ```swift
@@ -90,6 +113,27 @@ func registerUser(email: String, password: String) throws -> User {
 }
 ```
 
+## Units (top-down encapsulation)
+
+Encapsulate by usage, top-down. If a symbol is used by only one other module, it
+belongs to that module — move it into a folder named after the module.
+
+Given `a.swift`, `b.swift`, `c.swift` where `c.swift` is used only by `a.swift`:
+
+- Good:
+  ```
+  a/
+    a.swift    # the unit entry — same name as the folder
+    c.swift    # private to a
+  b.swift
+  ```
+- Bad:
+  ```
+  a.swift
+  b.swift
+  c.swift      # reads as shared, but only a uses it
+  ```
+
 ## Todos
 
 All todos must have a tag:
@@ -106,14 +150,19 @@ All todos must have a tag:
 
 ## Comments & Docs
 
-Comments, READMEs, and proto docs describe the **current state** of the system —
+Comments, READMEs, and other docs describe the **current state** of the system —
 not its history or the discussion behind it.
 
+- Keep every comment and text EXTREMELY MINIMAL and OBVIOUSLY READABLE
+- Prefer visual examples over prose
 - No references to previous behavior ("now X instead of Y", "no longer…") —
   git holds the history
 - No rejected alternatives or leftover justifications from earlier iterations
 - Negations are fine only to explain a current invariant that matters on its own
 - Deliberate TODOs / planned work markers are fine
+- A complex unit (see Units above) carries a doc next to its entry — same base
+  name with `.md` (`a.swift` → `a.md`, or `a/a.swift` → `a/a.md`), high-level per
+  the READMEs rules below
 
 ## READMEs
 
