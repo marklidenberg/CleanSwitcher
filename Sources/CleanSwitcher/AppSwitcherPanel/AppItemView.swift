@@ -125,7 +125,10 @@ class AppItemView: NSView {
     func setSelected(_ selected: Bool) {
         guard selected != isSelected else { return }
         isSelected = selected
-        layer?.backgroundColor = isSelected ? NSColor.white.withAlphaComponent(0.3).cgColor : NSColor.clear.cgColor
+        // Dark tint reads on the light glass; white on dark.
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let highlight = isDark ? NSColor.white.withAlphaComponent(0.30) : NSColor.black.withAlphaComponent(0.18)
+        layer?.backgroundColor = isSelected ? highlight.cgColor : NSColor.clear.cgColor
     }
 
     override func mouseEntered(with event: NSEvent) { delegate?.appItemHovered(self) }

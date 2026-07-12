@@ -43,6 +43,12 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
 
     private var clickShields: [ClickShieldPanel] = []
 
+    // The panel is built immediately but presented after a short delay, so a fast
+    // Cmd+Tab tap (press then release) switches without ever flashing it on screen.
+    private var pendingShow: DispatchWorkItem?
+    private let showDelay: TimeInterval = 0.10
+    private var holdStart: Date?  // temporary: measure Tab-press → Cmd-release
+
     // Recomputed per show from the target screen.
     private var itemSize: CGFloat = 76
     private var itemsPerRow: Int = 1
@@ -84,27 +90,28 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
+        animationBehavior = .none  // no scale/fade-in; the switcher appears at once
     }
 
     private func setupVisualEffectView() {
         let effectView = HoverTrackingVisualEffectView()
         effectView.onMouseMovement = { [weak self] in self?.handleMouseMoved() }
         visualEffectView = effectView
-        visualEffectView.material = .hudWindow
+        visualEffectView.material = .popover
         visualEffectView.state = .active
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.wantsLayer = true
         visualEffectView.maskImage = maskImage(cornerRadius: 16)
 
-        // Darkening overlay for light mode (transparent in dark mode).
-        let darkeningView = AppearanceAdaptiveView()
-        darkeningView.translatesAutoresizingMaskIntoConstraints = false
-        visualEffectView.addSubview(darkeningView)
+        // Subtle white glass tint over the blur (liquid-glass look).
+        let tintView = GlassTintView()
+        tintView.translatesAutoresizingMaskIntoConstraints = false
+        visualEffectView.addSubview(tintView)
         NSLayoutConstraint.activate([
-            darkeningView.leadingAnchor.constraint(equalTo: visualEffectView.leadingAnchor),
-            darkeningView.trailingAnchor.constraint(equalTo: visualEffectView.trailingAnchor),
-            darkeningView.topAnchor.constraint(equalTo: visualEffectView.topAnchor),
-            darkeningView.bottomAnchor.constraint(equalTo: visualEffectView.bottomAnchor),
+            tintView.leadingAnchor.constraint(equalTo: visualEffectView.leadingAnchor),
+            tintView.trailingAnchor.constraint(equalTo: visualEffectView.trailingAnchor),
+            tintView.topAnchor.constraint(equalTo: visualEffectView.topAnchor),
+            tintView.bottomAnchor.constraint(equalTo: visualEffectView.bottomAnchor),
         ])
 
         contentView = visualEffectView
@@ -188,7 +195,7 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
         }
 
         sizeAndCenter(on: screen.visibleFrame)
-        present()
+        schedulePresent()
     }
 
     /// Show a non-interactive placeholder (e.g. "No open windows"). No selectable
@@ -209,7 +216,7 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
         verticalStackView.addArrangedSubview(label)
 
         sizeAndCenter(on: screen.visibleFrame)
-        present()
+        schedulePresent()
     }
 
     /// The screen under the cursor; also sets `maxPanelWidth` from it.
@@ -227,8 +234,22 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
                         width: size.width, height: size.height), display: true)
     }
 
+    /// Present after `showDelay`; a hide before it fires cancels it, so a fast tap
+    /// never flashes the panel.
+    private func schedulePresent() {
+        holdStart = Date()  // temporary: measure Tab-press → Cmd-release
+        pendingShow?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.pendingShow = nil
+            self?.present()
+        }
+        pendingShow = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + showDelay, execute: work)
+    }
+
     /// Reset hover state, then show with click shields.
     private func present() {
+        if let s = holdStart { NSLog("CSFLICK SHOWN after %.0fms", Date().timeIntervalSince(s) * 1000) }
         deadZoneInitialPosition = nil
         isAllowedToMouseHover = false
         cancelHoverSuppression()
@@ -370,6 +391,13 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
     }
 
     func hidePanel() {
+        if let s = holdStart {
+            NSLog("CSFLICK RELEASED after %.0fms — %@", Date().timeIntervalSince(s) * 1000,
+                  pendingShow != nil ? "NOT shown (cancelled)" : "was shown")
+        }
+        holdStart = nil
+        pendingShow?.cancel()  // a fast tap dismisses before the delayed present fires
+        pendingShow = nil
         stopMouseMonitor()
         hideClickShields()
         deadZoneInitialPosition = nil
@@ -693,8 +721,8 @@ private class ClickShieldView: NSView {
     override func otherMouseDown(with event: NSEvent) { onClick() }
 }
 
-/// Darkens the background in light mode only.
-private class AppearanceAdaptiveView: NSView {
+/// A subtle white glass tint over the blur — brighter in light mode.
+private class GlassTintView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override init(frame: NSRect) {
@@ -709,6 +737,6 @@ private class AppearanceAdaptiveView: NSView {
 
     override func updateLayer() {
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        layer?.backgroundColor = isDark ? nil : NSColor.black.withAlphaComponent(0.35).cgColor
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(isDark ? 0.10 : 0.30).cgColor
     }
 }

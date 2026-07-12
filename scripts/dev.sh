@@ -38,12 +38,17 @@ reload() {
     [ -f "$PROJECT_DIR/AppIcon.icns" ] && cp "$PROJECT_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
     echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
-    codesign --force --deep --sign "$IDENTITY" "$APP_BUNDLE" >/dev/null 2>&1
-
     pkill -x "$BINARY_NAME" 2>/dev/null || true
     sleep 0.2
-    open "$APP_BUNDLE"
-    echo "──▶ reloaded ($(date +%H:%M:%S))  identity: $IDENTITY"
+
+    # LaunchServices resolves the shared bundle id to the installed copy, so an
+    # `open` of the project bundle relaunches /Applications instead. Deploy there
+    # and launch that — it's also the login-item install, so it keeps its grant.
+    INSTALLED="/Applications/$APP_NAME.app"
+    ditto "$APP_BUNDLE" "$INSTALLED"
+    codesign --force --deep --sign "$IDENTITY" "$INSTALLED" >/dev/null 2>&1
+    open "$INSTALLED"
+    echo "──▶ reloaded ($(date +%H:%M:%S))  identity: $IDENTITY  → $INSTALLED"
 }
 
 reload
