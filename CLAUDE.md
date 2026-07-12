@@ -115,7 +115,7 @@ func registerUser(email: String, password: String) throws -> User {
 
 ## Units (top-down encapsulation)
 
-Encapsulate by usage, top-down. If a symbol is used by only one other module, it
+If a symbol is used by only one other module, it
 belongs to that module — move it into a folder named after the module.
 
 Given `a.swift`, `b.swift`, `c.swift` where `c.swift` is used only by `a.swift`:
