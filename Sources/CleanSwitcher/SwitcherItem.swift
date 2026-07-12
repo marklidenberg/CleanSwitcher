@@ -1,14 +1,16 @@
 import Cocoa
 
-/// A single tile in the switcher panel. Backs both modes: an app tile (Cmd+Tab)
-/// carries an `AppInfo`; a window tile (Cmd+`) carries a `WindowInfo`. The panel
-/// and AppItemView are written against this so they don't branch on mode.
+/// One tile in the switcher panel — an app tile (Cmd+Tab) carries an `AppInfo`,
+/// a window tile (Cmd+`) carries a `WindowInfo`. The panel is written against
+/// this so it never branches on mode.
 struct SwitcherItem {
     let icon: NSImage
     let badge: String?
+
     /// App name (app mode) or window title (window mode). Shown in the panel's
-    /// title label only in window mode; app mode renders icons alone.
+    /// label only in window mode; app mode renders icons alone.
     let title: String
+
     let appInfo: AppInfo?
     let window: WindowInfo?
 
@@ -20,6 +22,6 @@ struct SwitcherItem {
         SwitcherItem(icon: window.icon, badge: nil, title: window.title, appInfo: nil, window: window)
     }
 
-    /// Stable-enough identity for append-diffing the live app list.
+    /// Identity for append-diffing the live app list.
     var identityPID: pid_t { appInfo?.pid ?? window?.pid ?? -1 }
 }

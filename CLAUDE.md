@@ -14,14 +14,21 @@ Use `--disable-sandbox` when building from Claude Code (SPM's own `sandbox-exec`
 
 ## Layout
 
-`Sources/CleanSwitcher/` — one file per concern:
+`Sources/CleanSwitcher/` — units (folder + `.md` for the complex ones), plus
+shared files at the top level:
 
-- `AppDelegate` — state machine (idle/active × apps/windows), coordinates everything
-- `HotkeyManager` — Carbon hotkeys, `.listenOnly` CGEvent tap, auto-repeat
-- `AppListProvider` / `WindowListProvider` — MRU apps / per-app windows, recency split
-- `AppSwitcherPanel` / `AppItemView` / `SwitcherItem` — the panel UI
-- `Preferences` — UserDefaults wrapper
-- `PrivateAPIs` — `CGSSetSymbolicHotKeyEnabled` (disables native Cmd+Tab; restored on exit)
+```
+AppDelegate/         coordinator + state machine; private: permission, menu bar, prefs window
+HotkeyManager/       Carbon hotkeys + .listenOnly CGEvent tap + auto-repeat; private: SwitcherConfig
+AppSwitcherPanel/    the panel UI; private: AppItemView
+AppListProvider      MRU apps, recency split, Dock badges
+WindowListProvider   per-app windows via AX, recency split, focus tracker
+SwitcherItem         one panel tile (app or window)
+Preferences          UserDefaults wrapper
+LoginItem            start-at-login (SMAppService)
+PrivateAPIs          CGSSetSymbolicHotKeyEnabled (native Cmd+Tab), _AXUIElementGetWindow
+main.swift           entry + crash/quit restore of native Cmd+Tab
+```
 
 Needs Accessibility permission (not Input Monitoring). Without it, native Cmd+Tab keeps working and the app polls until granted.
 

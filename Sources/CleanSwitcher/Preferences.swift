@@ -1,10 +1,7 @@
 import Cocoa
 
-/// Single source of truth for persisted settings, wrapping `UserDefaults.standard`.
-/// All keys live here so nothing is referenced as a stray string literal.
+/// Persisted settings, wrapping `UserDefaults.standard`. All keys live here.
 enum Preferences {
-
-    // MARK: - Keys
 
     private enum Key {
         static let showMenuBarIcon = "showMenuBarIcon"
@@ -13,8 +10,7 @@ enum Preferences {
 
     private static let defaults = UserDefaults.standard
 
-    /// Registers in-process fallbacks. Does NOT persist, so this must run before
-    /// any read, on every launch (see AppDelegate.applicationDidFinishLaunching).
+    /// In-process fallbacks. Doesn't persist, so run before any read, every launch.
     static func registerDefaults() {
         defaults.register(defaults: [
             Key.showMenuBarIcon: true,
@@ -22,21 +18,16 @@ enum Preferences {
         ])
     }
 
-    // MARK: - Accessors
-
     static var showMenuBarIcon: Bool {
         get { defaults.bool(forKey: Key.showMenuBarIcon) }
         set { defaults.set(newValue, forKey: Key.showMenuBarIcon) }
     }
 
-    /// How recently an app must have been focused to appear in the app switcher,
-    /// and to sit in a window switcher's main section. Stored in minutes for a
-    /// friendly Preferences control. Defaults to 60 (see registerDefaults).
+    /// How recently an app/window must have been focused to sit in the main row.
     static var mainRowTTLMinutes: Int {
         get { defaults.integer(forKey: Key.mainRowTTLMinutes) }
         set { defaults.set(newValue, forKey: Key.mainRowTTLMinutes) }
     }
 
-    /// The main-row TTL as a `TimeInterval` (seconds), for the split logic.
     static var mainRowTTL: TimeInterval { TimeInterval(mainRowTTLMinutes) * 60 }
 }
