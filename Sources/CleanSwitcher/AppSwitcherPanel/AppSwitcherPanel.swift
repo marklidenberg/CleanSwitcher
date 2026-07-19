@@ -19,8 +19,7 @@ class AppSwitcherPanel: NSPanel, AppItemViewDelegate {
 
     // Vertical list (window switcher) vs horizontal icon grid (app switcher).
     private var verticalLayout = false
-    // Whether the secondary section is on screen (app switcher opens hidden,
-    // window switcher opens shown; T toggles).
+    // Whether the secondary section is on screen (opens hidden; T toggles).
     private var secondaryShown = false
 
     private var selectedRow: Int = 0

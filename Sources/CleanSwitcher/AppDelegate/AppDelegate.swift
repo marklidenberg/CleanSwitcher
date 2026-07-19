@@ -151,9 +151,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         startAppListRefresh()
     }
 
-    /// Open the window switcher for `app`: one tile per standard window, secondary
-    /// shown. Forward selects the second window, reverse the last. An app with no
-    /// windows shows a "No open windows" placeholder instead.
+    /// Open the window switcher for `app`: one tile per standard window. Forward
+    /// selects the second main window, reverse the last. Secondary starts hidden.
+    /// An app with no windows shows a "No open windows" placeholder instead.
     private func openWindowPanel(for app: NSRunningApplication?, reverse: Bool) {
         guard let app = app else {
             if state == .idle { hotkeyManager.isActive = false }
@@ -167,11 +167,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         shownPIDs = []
 
         if total > 0 {
-            let selectIndex = reverse ? (total - 1) : (total > 1 ? 1 : 0)
+            let selectIndex = reverse ? (mainWindows.count - 1) : (mainWindows.count > 1 ? 1 : 0)
             panel.showWithItems(
                 main: mainWindows.map { SwitcherItem.window($0) },
                 secondary: secondaryWindows.map { SwitcherItem.window($0) },
-                selectIndex: selectIndex, vertical: true, secondaryShown: true
+                selectIndex: selectIndex, vertical: true, secondaryShown: false
             )
         } else {
             panel.showPlaceholder("No open windows")
