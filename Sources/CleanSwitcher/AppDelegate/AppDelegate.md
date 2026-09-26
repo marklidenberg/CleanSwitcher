@@ -21,6 +21,9 @@ activates the selection; Escape / an outside click dismisses.
 Each hotkey can be disabled in Preferences: it's still registered and the
 native one stays off, but pressing it is a no-op — even without permission.
 
+"Bring all windows forward" (opt-in) re-activates every newly active app with
+all its windows, whatever activated it (Spotlight, Dock, click, switcher).
+
 ## Accessibility permission
 
 Taking over Cmd+Tab means disabling the native hotkey, which must never happen

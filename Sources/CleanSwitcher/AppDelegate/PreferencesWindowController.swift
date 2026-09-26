@@ -13,6 +13,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
     private var menuBarCheckbox: NSButton!
     private var disableAppSwitcherCheckbox: NSButton!
     private var disableWindowSwitcherCheckbox: NSButton!
+    private var raiseAllWindowsCheckbox: NSButton!
     private var ttlField: NSTextField!
 
     convenience init() {
@@ -40,6 +41,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
         disableAppSwitcherCheckbox = NSButton(checkboxWithTitle: "Disable ⌘ Tab (no-op)", target: self, action: #selector(toggleDisableAppSwitcher))
         disableWindowSwitcherCheckbox = NSButton(checkboxWithTitle: "Disable ⌘ ` (no-op)", target: self, action: #selector(toggleDisableWindowSwitcher))
+        raiseAllWindowsCheckbox = NSButton(checkboxWithTitle: "Bring all windows forward when switching apps", target: self, action: #selector(toggleRaiseAllWindows))
 
         let quitButton = NSButton(title: "Quit CleanSwitcher", target: self, action: #selector(quit))
         quitButton.bezelStyle = .rounded
@@ -52,7 +54,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
         let stack = NSStackView(views: [
             launchAtLoginCheckbox, menuBarCheckbox, makeTTLRow(),
-            disableAppSwitcherCheckbox, disableWindowSwitcherCheckbox,
+            disableAppSwitcherCheckbox, disableWindowSwitcherCheckbox, raiseAllWindowsCheckbox,
             makeSectionLabel("Shortcuts"), makeShortcutsGrid(), quitButton, versionLabel,
         ])
         stack.orientation = .vertical
@@ -189,6 +191,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         ttlField.stringValue = Self.formatMinutes(Preferences.mainRowTTLMinutes)
         disableAppSwitcherCheckbox.state = Preferences.disableAppSwitcher ? .on : .off
         disableWindowSwitcherCheckbox.state = Preferences.disableWindowSwitcher ? .on : .off
+        raiseAllWindowsCheckbox.state = Preferences.raiseAllWindows ? .on : .off
     }
 
     private func versionString() -> String {
@@ -218,6 +221,10 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         onToggleDisabledHotkeys?()
     }
 
+    @objc private func toggleRaiseAllWindows() {
+        Preferences.raiseAllWindows = raiseAllWindowsCheckbox.state == .on
+    }
+
     /// Parse and persist the TTL, then re-render canonically. Unparseable input
     /// snaps back. Takes effect on the next Cmd+Tab.
     @objc private func commitTTL() {
@@ -225,6 +232,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         ttlField.stringValue = Self.formatMinutes(Preferences.mainRowTTLMinutes)
         disableAppSwitcherCheckbox.state = Preferences.disableAppSwitcher ? .on : .off
         disableWindowSwitcherCheckbox.state = Preferences.disableWindowSwitcher ? .on : .off
+        raiseAllWindowsCheckbox.state = Preferences.raiseAllWindows ? .on : .off
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {

@@ -8,6 +8,7 @@ enum Preferences {
         static let mainRowTTLMinutes = "mainRowTTLMinutes"
         static let disableAppSwitcher = "disableAppSwitcher"
         static let disableWindowSwitcher = "disableWindowSwitcher"
+        static let raiseAllWindows = "raiseAllWindows"
     }
 
     private static let defaults = UserDefaults.standard
@@ -41,6 +42,12 @@ enum Preferences {
     static var disableWindowSwitcher: Bool {
         get { defaults.bool(forKey: Key.disableWindowSwitcher) }
         set { defaults.set(newValue, forKey: Key.disableWindowSwitcher) }
+    }
+
+    /// Any app activation (Spotlight, Dock, click, switcher) brings all its windows forward.
+    static var raiseAllWindows: Bool {
+        get { defaults.bool(forKey: Key.raiseAllWindows) }
+        set { defaults.set(newValue, forKey: Key.raiseAllWindows) }
     }
 
     static var mainRowTTL: TimeInterval { TimeInterval(mainRowTTLMinutes) * 60 }

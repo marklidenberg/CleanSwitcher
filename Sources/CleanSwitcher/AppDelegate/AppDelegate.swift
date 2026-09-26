@@ -55,6 +55,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         prefsWindowController.onToggleMenuBar = { [weak self] _ in self?.refreshStatusItem() }
         prefsWindowController.onToggleDisabledHotkeys = { [weak self] in self?.reconcileHotkeys() }
 
+        // - Bring all of an app's windows forward on any activation (opt-in)
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { notification in
+            guard Preferences.raiseAllWindows,
+                  let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app != NSRunningApplication.current else { return }
+            app.activate(options: [.activateAllWindows])
+        }
+
         // - Take over Cmd+Tab only once Accessibility is granted, then keep
         //   reconciling permission (enable when granted, quit if revoked)
 
