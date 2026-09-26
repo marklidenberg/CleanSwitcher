@@ -18,11 +18,23 @@ Cmd+Tab from idle opens the app switcher; from active it steps. Cmd+` from the
 app switcher dives into the selected app's windows. Releasing Cmd (or Return)
 activates the selection; Escape / an outside click dismisses.
 
-Each hotkey can be disabled in Preferences: it's still registered and the
-native one stays off, but pressing it is a no-op — even without permission.
+Each hotkey has a mode in Preferences, applied from idle:
 
-"Bring all windows forward" (opt-in) re-activates every newly active app with
-all its windows, whatever activated it (Spotlight, Dock, click, switcher).
+```
+Normal       open the panel
+Recent only  switch straight to the previous app / window, no panel
+Disabled     no-op; still registered, native one stays off — even without permission
+```
+
+On every app activation, whatever caused it (Spotlight, Dock, click, switcher),
+two opt-ins apply:
+
+- "Bring all windows forward" — re-activates the app with all its windows.
+- "Hide other apps when switching" — hides every other app (instant, no
+  animation); activating a hidden app unhides it.
+
+"Open new windows maximized" (opt-in, needs permission) resizes each new
+standard window of any app to fill its screen (menu bar and Dock excluded).
 
 ## Accessibility permission
 
@@ -30,7 +42,7 @@ Taking over Cmd+Tab means disabling the native hotkey, which must never happen
 without a working replacement:
 
 - The event tap is created **first**; native Cmd+Tab is disabled only if that
-  succeeds (or it's disabled in Preferences). Until permission is granted, native Cmd+Tab keeps working.
+  succeeds (or its mode is Disabled). Until permission is granted, native Cmd+Tab keeps working.
 - A background poll reconciles permission (not the tap-disabled callback, which
   macOS doesn't reliably deliver on revoke). On revocation it restores native
   Cmd+Tab and **quits** — terminating is the only reliable way to release the tap

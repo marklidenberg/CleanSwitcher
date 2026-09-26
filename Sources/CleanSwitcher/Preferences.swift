@@ -6,9 +6,11 @@ enum Preferences {
     private enum Key {
         static let showMenuBarIcon = "showMenuBarIcon"
         static let mainRowTTLMinutes = "mainRowTTLMinutes"
-        static let disableAppSwitcher = "disableAppSwitcher"
-        static let disableWindowSwitcher = "disableWindowSwitcher"
+        static let appSwitcherMode = "appSwitcherMode"
+        static let windowSwitcherMode = "windowSwitcherMode"
         static let raiseAllWindows = "raiseAllWindows"
+        static let maximizeNewWindows = "maximizeNewWindows"
+        static let hideOtherAppsOnSwitch = "hideOtherAppsOnSwitch"
     }
 
     private static let defaults = UserDefaults.standard
@@ -32,22 +34,42 @@ enum Preferences {
         set { defaults.set(newValue, forKey: Key.mainRowTTLMinutes) }
     }
 
-    /// Cmd+Tab is swallowed (no-op) instead of opening the app switcher.
-    static var disableAppSwitcher: Bool {
-        get { defaults.bool(forKey: Key.disableAppSwitcher) }
-        set { defaults.set(newValue, forKey: Key.disableAppSwitcher) }
+    /// What a hotkey does from idle:
+    /// - normal: open the switcher panel
+    /// - recentOnly: switch straight to the previous app/window, no panel
+    /// - disabled: nothing (still swallowed, native one stays off)
+    enum HotkeyMode: String, CaseIterable {
+        case normal, recentOnly, disabled
     }
 
-    /// Cmd+` is swallowed (no-op) instead of opening the window switcher.
-    static var disableWindowSwitcher: Bool {
-        get { defaults.bool(forKey: Key.disableWindowSwitcher) }
-        set { defaults.set(newValue, forKey: Key.disableWindowSwitcher) }
+    /// Cmd+Tab
+    static var appSwitcherMode: HotkeyMode {
+        get { defaults.string(forKey: Key.appSwitcherMode).flatMap(HotkeyMode.init) ?? .normal }
+        set { defaults.set(newValue.rawValue, forKey: Key.appSwitcherMode) }
+    }
+
+    /// Cmd+`
+    static var windowSwitcherMode: HotkeyMode {
+        get { defaults.string(forKey: Key.windowSwitcherMode).flatMap(HotkeyMode.init) ?? .normal }
+        set { defaults.set(newValue.rawValue, forKey: Key.windowSwitcherMode) }
     }
 
     /// Any app activation (Spotlight, Dock, click, switcher) brings all its windows forward.
     static var raiseAllWindows: Bool {
         get { defaults.bool(forKey: Key.raiseAllWindows) }
         set { defaults.set(newValue, forKey: Key.raiseAllWindows) }
+    }
+
+    /// New standard windows of any app open filling their screen.
+    static var maximizeNewWindows: Bool {
+        get { defaults.bool(forKey: Key.maximizeNewWindows) }
+        set { defaults.set(newValue, forKey: Key.maximizeNewWindows) }
+    }
+
+    /// Any app activation hides all other apps (like Cmd+Opt+H).
+    static var hideOtherAppsOnSwitch: Bool {
+        get { defaults.bool(forKey: Key.hideOtherAppsOnSwitch) }
+        set { defaults.set(newValue, forKey: Key.hideOtherAppsOnSwitch) }
     }
 
     static var mainRowTTL: TimeInterval { TimeInterval(mainRowTTLMinutes) * 60 }

@@ -53,17 +53,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
 
         prefsWindowController = PreferencesWindowController()
         prefsWindowController.onToggleMenuBar = { [weak self] _ in self?.refreshStatusItem() }
-        prefsWindowController.onToggleDisabledHotkeys = { [weak self] in self?.reconcileHotkeys() }
+        prefsWindowController.onChangeHotkeyMode = { [weak self] in self?.reconcileHotkeys() }
 
-        // - Bring all of an app's windows forward on any activation (opt-in)
+        // - On any activation (opt-in): bring all its windows forward, hide other apps
 
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { notification in
-            guard Preferences.raiseAllWindows,
-                  let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+        ) { [weak self] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app != NSRunningApplication.current else { return }
-            app.activate(options: [.activateAllWindows])
+            if Preferences.raiseAllWindows { app.activate(options: [.activateAllWindows]) }
+            if Preferences.hideOtherAppsOnSwitch { self?.hideApps(except: app.processIdentifier) }
         }
 
         // - Take over Cmd+Tab only once Accessibility is granted, then keep
@@ -101,7 +101,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
             panel.selectNext()  // already active — step forward
             return
         }
-        guard !Preferences.disableAppSwitcher else { hotkeyManager.isActive = false; return }
+        guard Preferences.appSwitcherMode == .normal else { switchWithoutPanel(Preferences.appSwitcherMode, toRecent: switchToRecentApp); return }
         openPanel(reverse: false)
     }
 
@@ -110,17 +110,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
             panel.selectPrevious()
             return
         }
-        guard !Preferences.disableAppSwitcher else { hotkeyManager.isActive = false; return }
+        guard Preferences.appSwitcherMode == .normal else { switchWithoutPanel(Preferences.appSwitcherMode, toRecent: switchToRecentApp); return }
         openPanel(reverse: true)
     }
 
     /// Cmd+`: open the window switcher (idle), dive into the selected app's windows
     /// (showing apps), or cycle windows (already in window mode).
     func hotkeyTriggeredWindows() {
-        guard !Preferences.disableWindowSwitcher else {
-            if state == .idle { hotkeyManager.isActive = false }
-            return
-        }
+        if state == .idle, Preferences.windowSwitcherMode != .normal { switchWithoutPanel(Preferences.windowSwitcherMode, toRecent: switchToRecentWindow); return }
+        guard Preferences.windowSwitcherMode != .disabled else { return }
         switch state {
         case .idle:
             openWindowPanel(for: NSWorkspace.shared.frontmostApplication, reverse: false)
@@ -134,10 +132,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
     }
 
     func hotkeyTriggeredWindowsReverse() {
-        guard !Preferences.disableWindowSwitcher else {
-            if state == .idle { hotkeyManager.isActive = false }
-            return
-        }
+        if state == .idle, Preferences.windowSwitcherMode != .normal { switchWithoutPanel(Preferences.windowSwitcherMode, toRecent: switchToRecentWindow); return }
+        guard Preferences.windowSwitcherMode != .disabled else { return }
         switch state {
         case .idle:
             openWindowPanel(for: NSWorkspace.shared.frontmostApplication, reverse: true)
@@ -148,6 +144,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
                 openWindowPanel(for: app, reverse: true)
             }
         }
+    }
+
+    /// A hotkey from idle outside normal mode: no panel — switch to the previous
+    /// app/window (recent only) or do nothing (disabled).
+    private func switchWithoutPanel(_ hotkeyMode: Preferences.HotkeyMode, toRecent: () -> Void) {
+        hotkeyManager.isActive = false
+        if hotkeyMode == .recentOnly { toRecent() }
+    }
+
+    private func switchToRecentApp() {
+        let (main, secondary) = AppListProvider.getSplitApps()
+        let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        if let app = (main + secondary).first(where: { $0.pid != frontPID }) { activateItem(.app(app)) }
+    }
+
+    /// The frontmost app's previous window (splitWindows puts the front one first).
+    private func switchToRecentWindow() {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return }
+        let (main, secondary) = WindowListProvider.splitWindows(for: app)
+        if let window = (main + secondary).dropFirst().first { activateItem(.window(window)) }
     }
 
     /// Open the app switcher. Forward selects the second recent app (quick Alt-Tab
@@ -246,7 +262,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         case kVK_ANSI_H:
             // Activate the selection and hide every other app, then dismiss.
             if let selected = panel.getSelectedItem() { activateItem(selected) }
-            hideOtherApps()
+            // The selected item's app — activation may not have reached frontmostApplication yet
+            hideApps(except: panel.getSelectedItem()?.identityPID ?? NSWorkspace.shared.frontmostApplication?.processIdentifier)
             dismissPanel()
         case kVK_ANSI_Q: quitSelectedApp()
         case kVK_ANSI_W: closeSelectedWindow()
@@ -273,12 +290,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         }
     }
 
-    /// Cmd+H: hide every regular app except the just-activated one (macOS "Hide
-    /// Others"). `keepPID` is the selected item's app, since activation may not
-    /// have reached `frontmostApplication` yet.
-    private func hideOtherApps() {
+    /// Hide every regular app except `keepPID` (macOS "Hide Others").
+    private func hideApps(except keepPID: pid_t?) {
         let selfPID = ProcessInfo.processInfo.processIdentifier
-        let keepPID = panel.getSelectedItem()?.identityPID ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
             let pid = app.processIdentifier
             if pid == selfPID || pid == keepPID { continue }
@@ -343,6 +357,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         guard hotkeyManager.tryCreateEventTap() else { return }  // permission gate
         switchingEnabled = true
         reconcileHotkeys()
+        NewWindowMaximizer.start()
         print("Switching enabled.")
     }
 
@@ -350,8 +365,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
     /// it's disabled in Preferences — a disabled one is a no-op that needs no
     /// permission. Otherwise leave the native one alone.
     private func reconcileHotkeys() {
-        let ownsApp = switchingEnabled || Preferences.disableAppSwitcher
-        let ownsWindow = switchingEnabled || Preferences.disableWindowSwitcher
+        let ownsApp = switchingEnabled || Preferences.appSwitcherMode == .disabled
+        let ownsWindow = switchingEnabled || Preferences.windowSwitcherMode == .disabled
         hotkeyManager.setAppHotkeysRegistered(ownsApp)
         hotkeyManager.setWindowHotkeysRegistered(ownsWindow)
         setNativeCommandTabEnabled(!ownsApp, CGSSymbolicHotKey.appSwitcher)

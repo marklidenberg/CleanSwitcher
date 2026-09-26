@@ -19,7 +19,7 @@ Use `--disable-sandbox` when building from Claude Code (SPM's own `sandbox-exec`
 shared files at the top level:
 
 ```
-AppDelegate/         coordinator + state machine; private: permission, menu bar, prefs window
+AppDelegate/         coordinator + state machine; private: permission, menu bar, prefs window, new-window maximizer
 HotkeyManager/       Carbon hotkeys + .listenOnly CGEvent tap + auto-repeat; private: SwitcherConfig
 AppSwitcherPanel/    the panel UI; private: AppItemView
 AppListProvider      MRU apps, recency split, Dock badges

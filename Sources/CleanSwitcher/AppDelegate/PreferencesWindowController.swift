@@ -6,14 +6,16 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
     /// Called with the new value when "Show icon in menu bar" changes.
     var onToggleMenuBar: ((Bool) -> Void)?
-    /// Called when a "Disable ⌘ …" checkbox changes.
-    var onToggleDisabledHotkeys: (() -> Void)?
+    /// Called when a hotkey mode changes.
+    var onChangeHotkeyMode: (() -> Void)?
 
     private var launchAtLoginCheckbox: NSButton!
     private var menuBarCheckbox: NSButton!
-    private var disableAppSwitcherCheckbox: NSButton!
-    private var disableWindowSwitcherCheckbox: NSButton!
+    private var appSwitcherModePopup: NSPopUpButton!
+    private var windowSwitcherModePopup: NSPopUpButton!
     private var raiseAllWindowsCheckbox: NSButton!
+    private var maximizeNewWindowsCheckbox: NSButton!
+    private var hideOtherAppsCheckbox: NSButton!
     private var ttlField: NSTextField!
 
     convenience init() {
@@ -39,9 +41,11 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
         menuBarCheckbox = NSButton(checkboxWithTitle: "Show icon in menu bar", target: self, action: #selector(toggleMenuBar))
 
-        disableAppSwitcherCheckbox = NSButton(checkboxWithTitle: "Disable ⌘ Tab (no-op)", target: self, action: #selector(toggleDisableAppSwitcher))
-        disableWindowSwitcherCheckbox = NSButton(checkboxWithTitle: "Disable ⌘ ` (no-op)", target: self, action: #selector(toggleDisableWindowSwitcher))
+        appSwitcherModePopup = makeModePopup()
+        windowSwitcherModePopup = makeModePopup()
         raiseAllWindowsCheckbox = NSButton(checkboxWithTitle: "Bring all windows forward when switching apps", target: self, action: #selector(toggleRaiseAllWindows))
+        maximizeNewWindowsCheckbox = NSButton(checkboxWithTitle: "Open new windows maximized", target: self, action: #selector(toggleMaximizeNewWindows))
+        hideOtherAppsCheckbox = NSButton(checkboxWithTitle: "Hide other apps when switching", target: self, action: #selector(toggleHideOtherApps))
 
         let quitButton = NSButton(title: "Quit CleanSwitcher", target: self, action: #selector(quit))
         quitButton.bezelStyle = .rounded
@@ -54,7 +58,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
         let stack = NSStackView(views: [
             launchAtLoginCheckbox, menuBarCheckbox, makeTTLRow(),
-            disableAppSwitcherCheckbox, disableWindowSwitcherCheckbox, raiseAllWindowsCheckbox,
+            makeModeRow("⌘ Tab", appSwitcherModePopup), makeModeRow("⌘ `", windowSwitcherModePopup), raiseAllWindowsCheckbox, maximizeNewWindowsCheckbox, hideOtherAppsCheckbox,
             makeSectionLabel("Shortcuts"), makeShortcutsGrid(), quitButton, versionLabel,
         ])
         stack.orientation = .vertical
@@ -89,6 +93,26 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         ttlField.widthAnchor.constraint(equalToConstant: 80).isActive = true
 
         let row = NSStackView(views: [label, ttlField])
+        row.orientation = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = 8
+        return row
+    }
+
+    /// Popup items follow `HotkeyMode.allCases` order.
+    private func makeModePopup() -> NSPopUpButton {
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.addItems(withTitles: ["Normal", "Recent only", "Disabled"])
+        popup.target = self
+        popup.action = #selector(changeHotkeyMode)
+        return popup
+    }
+
+    /// "⌘ Tab   [ Normal ▾ ]"
+    private func makeModeRow(_ title: String, _ popup: NSPopUpButton) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        let row = NSStackView(views: [label, popup])
         row.orientation = .horizontal
         row.alignment = .firstBaseline
         row.spacing = 8
@@ -189,9 +213,11 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         launchAtLoginCheckbox.state = LoginItem.isEnabled ? .on : .off
         menuBarCheckbox.state = Preferences.showMenuBarIcon ? .on : .off
         ttlField.stringValue = Self.formatMinutes(Preferences.mainRowTTLMinutes)
-        disableAppSwitcherCheckbox.state = Preferences.disableAppSwitcher ? .on : .off
-        disableWindowSwitcherCheckbox.state = Preferences.disableWindowSwitcher ? .on : .off
+        appSwitcherModePopup.selectItem(at: Preferences.HotkeyMode.allCases.firstIndex(of: Preferences.appSwitcherMode)!)
+        windowSwitcherModePopup.selectItem(at: Preferences.HotkeyMode.allCases.firstIndex(of: Preferences.windowSwitcherMode)!)
         raiseAllWindowsCheckbox.state = Preferences.raiseAllWindows ? .on : .off
+        maximizeNewWindowsCheckbox.state = Preferences.maximizeNewWindows ? .on : .off
+        hideOtherAppsCheckbox.state = Preferences.hideOtherAppsOnSwitch ? .on : .off
     }
 
     private func versionString() -> String {
@@ -211,18 +237,22 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         onToggleMenuBar?(enabled)
     }
 
-    @objc private func toggleDisableAppSwitcher() {
-        Preferences.disableAppSwitcher = disableAppSwitcherCheckbox.state == .on
-        onToggleDisabledHotkeys?()
-    }
-
-    @objc private func toggleDisableWindowSwitcher() {
-        Preferences.disableWindowSwitcher = disableWindowSwitcherCheckbox.state == .on
-        onToggleDisabledHotkeys?()
+    @objc private func changeHotkeyMode() {
+        Preferences.appSwitcherMode = Preferences.HotkeyMode.allCases[appSwitcherModePopup.indexOfSelectedItem]
+        Preferences.windowSwitcherMode = Preferences.HotkeyMode.allCases[windowSwitcherModePopup.indexOfSelectedItem]
+        onChangeHotkeyMode?()
     }
 
     @objc private func toggleRaiseAllWindows() {
         Preferences.raiseAllWindows = raiseAllWindowsCheckbox.state == .on
+    }
+
+    @objc private func toggleMaximizeNewWindows() {
+        Preferences.maximizeNewWindows = maximizeNewWindowsCheckbox.state == .on
+    }
+
+    @objc private func toggleHideOtherApps() {
+        Preferences.hideOtherAppsOnSwitch = hideOtherAppsCheckbox.state == .on
     }
 
     /// Parse and persist the TTL, then re-render canonically. Unparseable input
@@ -230,9 +260,6 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
     @objc private func commitTTL() {
         if let minutes = Self.parseMinutes(ttlField.stringValue) { Preferences.mainRowTTLMinutes = minutes }
         ttlField.stringValue = Self.formatMinutes(Preferences.mainRowTTLMinutes)
-        disableAppSwitcherCheckbox.state = Preferences.disableAppSwitcher ? .on : .off
-        disableWindowSwitcherCheckbox.state = Preferences.disableWindowSwitcher ? .on : .off
-        raiseAllWindowsCheckbox.state = Preferences.raiseAllWindows ? .on : .off
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
