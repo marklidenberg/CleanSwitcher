@@ -25,8 +25,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
     private var appListRefreshTimer: DispatchSourceTimer?
     private var activityToken: NSObjectProtocol?
     private var isHandlingRevocation = false
+    private var pendingActivationWork: DispatchWorkItem?  // debounced hide/raise on activation
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // - On any regular app's activation (opt-in): hide other apps, bring all its
+        //   windows forward. Accessory apps (Paste, launchers) are skipped — their
+        //   panel acts on the app behind, which must stay visible.
+        //   Runs once activations settle (50ms), for the last activated app — hiding
+        //   mid-race (macOS may briefly activate Finder) makes apps fight back and
+        //   forth. Registered first so no other observer's AX work delays it. Never
+        //   issues an activation itself, for the same reason.
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let self = self,
+                  let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.activationPolicy == .regular, app != NSRunningApplication.current else { return }
+            self.pendingActivationWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                if Preferences.hideOtherAppsOnSwitch { self?.hideApps(except: app.processIdentifier) }
+                if Preferences.raiseAllWindows { WindowListProvider.raiseAll(of: app) }
+            }
+            self.pendingActivationWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+        }
+
         // - Core subsystems
 
         AppListProvider.startObserving()
@@ -54,19 +78,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         prefsWindowController = PreferencesWindowController()
         prefsWindowController.onToggleMenuBar = { [weak self] _ in self?.refreshStatusItem() }
         prefsWindowController.onChangeHotkeyMode = { [weak self] in self?.reconcileHotkeys() }
-
-        // - On any activation (opt-in): bring all its windows forward, hide other apps.
-        //   Never issues an activation itself — that would re-fire this observer and
-        //   ping-pong with any activation still in flight.
-
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] notification in
-            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app != NSRunningApplication.current, app == NSWorkspace.shared.frontmostApplication else { return }
-            if Preferences.raiseAllWindows { WindowListProvider.raiseAll(of: app) }
-            if Preferences.hideOtherAppsOnSwitch { self?.hideApps(except: app.processIdentifier) }
-        }
 
         // - Take over Cmd+Tab only once Accessibility is granted, then keep
         //   reconciling permission (enable when granted, quit if revoked)

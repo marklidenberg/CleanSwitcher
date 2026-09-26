@@ -26,15 +26,17 @@ Recent only  switch straight to the previous app / window, no panel
 Disabled     no-op; still registered, native one stays off — even without permission
 ```
 
-On every app activation, whatever caused it (Spotlight, Dock, click, switcher),
-two opt-ins apply:
+On every regular app's activation, whatever caused it (Spotlight, Dock, click,
+switcher), two opt-ins apply (accessory apps like Paste are skipped — their panel
+acts on the app behind):
 
 - "Bring all windows forward" — raises all its windows via AX.
 - "Hide other apps when switching" — hides every other app (instant, no
   animation); activating a hidden app unhides it.
 
-The observer never activates an app itself: activation is async, so it would
-re-fire the observer and ping-pong with an in-flight one (endless fast switching).
+Both run once activations settle (50ms), for the last activated app, and never
+activate an app themselves. Activation is async: acting mid-race (hiding an app
+still activating, or re-activating) makes apps ping-pong.
 
 "Open new windows maximized" (opt-in, needs permission) resizes each new
 standard window of any app to fill its screen (menu bar and Dock excluded).
