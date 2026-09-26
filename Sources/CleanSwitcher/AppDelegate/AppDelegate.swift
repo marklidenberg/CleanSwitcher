@@ -26,6 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
     private var activityToken: NSObjectProtocol?
     private var isHandlingRevocation = false
     private var pendingActivationWork: DispatchWorkItem?  // debounced hide/raise on activation
+    private var hideGeneration = 0  // bumped per hideApps call; stale pending hides are dropped
+    private let hideQueue = DispatchQueue(label: "com.cleanswitcher.hide")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // - On any regular app's activation (opt-in): hide other apps, bring all its
@@ -45,7 +47,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
             self.pendingActivationWork?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 if Preferences.hideOtherAppsOnSwitch { self?.hideApps(except: app.processIdentifier) }
-                if Preferences.raiseAllWindows { WindowListProvider.raiseAll(of: app) }
+                // With other apps hidden nothing can cover its windows — raising would only flicker
+                if Preferences.raiseAllWindows && !Preferences.hideOtherAppsOnSwitch { WindowListProvider.raiseAll(of: app) }
             }
             self.pendingActivationWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
@@ -304,12 +307,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
     }
 
     /// Hide every regular app except `keepPID` (macOS "Hide Others").
+    ///
+    /// An app hidden before it has processed its own deactivation still thinks
+    /// it's active and hands activation on (usually to Finder), which then hides
+    /// the app just switched to. So each app is hidden only once its AXFrontmost
+    /// (answered by the app itself) reads false — polled off main, up to ~0.5s,
+    /// then skipped. A newer hideApps call cancels the pending ones.
     private func hideApps(except keepPID: pid_t?) {
+        hideGeneration += 1
+        let generation = hideGeneration
         let selfPID = ProcessInfo.processInfo.processIdentifier
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && !app.isHidden {
             let pid = app.processIdentifier
             if pid == selfPID || pid == keepPID { continue }
-            app.hide()
+
+            let axApp = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(axApp, 0.1)
+            func hideWhenInactive(attempt: Int) {
+                var frontmost: CFTypeRef?
+                let stillFrontmost = AXUIElementCopyAttributeValue(axApp, kAXFrontmostAttribute as CFString, &frontmost) == .success
+                    && frontmost as? Bool == true
+                if !stillFrontmost {
+                    DispatchQueue.main.async { if generation == self.hideGeneration { app.hide() } }
+                } else if attempt < 50 {
+                    hideQueue.asyncAfter(deadline: .now() + 0.01) { hideWhenInactive(attempt: attempt + 1) }
+                }
+            }
+            hideQueue.async { hideWhenInactive(attempt: 0) }
         }
     }
 

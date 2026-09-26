@@ -30,7 +30,8 @@ On every regular app's activation, whatever caused it (Spotlight, Dock, click,
 switcher), two opt-ins apply (accessory apps like Paste are skipped — their panel
 acts on the app behind):
 
-- "Bring all windows forward" — raises all its windows via AX.
+- "Bring all windows forward" — raises (via AX) only its windows another app
+  covers; skipped while hiding other apps, since then nothing covers them.
 - "Hide other apps when switching" — hides every other app (instant, no
   animation); activating a hidden app unhides it.
 

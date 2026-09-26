@@ -119,14 +119,27 @@ enum WindowListProvider {
         AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
     }
 
-    /// Bring all of `app`'s non-minimized windows forward via AX raise (no
-    /// activation request), back to front so their order is kept.
+    /// Bring `app`'s on-screen windows above other apps' via AX raise (no
+    /// activation request). Each raise briefly makes that window main, so only
+    /// windows another app's window covers are raised (back to front), then the
+    /// front one again to keep it on top:
+    ///
+    ///     z-order  A1 X A2   →  raise A2, A1   →  A1 A2 X
+    ///     z-order  A1 A2 X   →  nothing
     static func raiseAll(of app: NSRunningApplication) {
-        for window in windows(for: app).reversed() {
-            var minimized: CFTypeRef?
-            AXUIElementCopyAttributeValue(window.axWindow, kAXMinimizedAttribute as CFString, &minimized)
-            if minimized as? Bool != true { AXUIElementPerformAction(window.axWindow, kAXRaiseAction as CFString) }
+        let pid = app.processIdentifier
+        let onScreen = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
+            .filter { $0[kCGWindowLayer as String] as? Int == 0 }
+        guard let firstOther = onScreen.firstIndex(where: { $0[kCGWindowOwnerPID as String] as? pid_t != pid }) else { return }
+        let buriedIds = Set(onScreen[firstOther...].filter { $0[kCGWindowOwnerPID as String] as? pid_t == pid }
+            .compactMap { $0[kCGWindowNumber as String] as? CGWindowID })
+        guard !buriedIds.isEmpty else { return }
+
+        let appWindows = windows(for: app)
+        for window in appWindows.reversed() where buriedIds.contains(window.windowId) {
+            AXUIElementPerformAction(window.axWindow, kAXRaiseAction as CFString)
         }
+        if let front = appWindows.first { AXUIElementPerformAction(front.axWindow, kAXRaiseAction as CFString) }
     }
 
     /// Bring a window to the front: un-minimize, raise, activate its app, stamp focus.
