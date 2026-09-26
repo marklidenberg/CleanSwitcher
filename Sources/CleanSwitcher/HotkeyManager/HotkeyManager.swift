@@ -128,13 +128,8 @@ class HotkeyManager {
     func stop() {
         // - Unregister the global hotkeys
 
-        for ref in [tabHotKeyRef, shiftTabHotKeyRef, windowSwitchHotKeyRef, windowSwitchISOHotKeyRef,
-                    windowSwitchReverseHotKeyRef, windowSwitchReverseISOHotKeyRef] {
-            if let ref = ref { UnregisterEventHotKey(ref) }
-        }
-        tabHotKeyRef = nil; shiftTabHotKeyRef = nil
-        windowSwitchHotKeyRef = nil; windowSwitchISOHotKeyRef = nil
-        windowSwitchReverseHotKeyRef = nil; windowSwitchReverseISOHotKeyRef = nil
+        setAppHotkeysRegistered(false)
+        setWindowHotkeysRegistered(false)
 
         // - Unregister the active-only hotkeys and stop repeats
 
@@ -329,13 +324,48 @@ class HotkeyManager {
         cmdWatchdog = nil
     }
 
-    /// Install the Carbon handler and register the global hotkeys. Paired with
-    /// stop(), so it can be called again to re-enable switching after a revoke.
-    func registerHotkeys() {
-        let eventTarget = GetEventDispatcherTarget()
+    /// Cmd+Tab and Cmd+Shift+Tab (Carbon needs an exact modifier match, so the
+    /// Shift variant is its own registration). Idempotent.
+    func setAppHotkeysRegistered(_ registered: Bool) {
+        if registered {
+            guard tabHotKeyRef == nil else { return }
+            tabHotKeyRef = registerGlobalHotkey(kVK_Tab, cmdKey, .tab)
+            shiftTabHotKeyRef = registerGlobalHotkey(kVK_Tab, cmdKey | shiftKey, .shiftTab)
+        } else {
+            for ref in [tabHotKeyRef, shiftTabHotKeyRef] { if let ref = ref { UnregisterEventHotKey(ref) } }
+            tabHotKeyRef = nil; shiftTabHotKeyRef = nil
+        }
+    }
 
-        // - Install the handler that forwards presses to handleHotkeyPressed
+    /// Cmd (+Shift) + the key left of "1" — window switcher. Grave (ANSI) and
+    /// section (ISO) so it works "left of 1" on any layout. Idempotent.
+    func setWindowHotkeysRegistered(_ registered: Bool) {
+        if registered {
+            guard windowSwitchHotKeyRef == nil else { return }
+            windowSwitchHotKeyRef = registerGlobalHotkey(kVK_ANSI_Grave, cmdKey, .windowSwitch)
+            windowSwitchISOHotKeyRef = registerGlobalHotkey(kVK_ISO_Section, cmdKey, .windowSwitch)
+            windowSwitchReverseHotKeyRef = registerGlobalHotkey(kVK_ANSI_Grave, cmdKey | shiftKey, .windowSwitchReverse)
+            windowSwitchReverseISOHotKeyRef = registerGlobalHotkey(kVK_ISO_Section, cmdKey | shiftKey, .windowSwitchReverse)
+        } else {
+            for ref in [windowSwitchHotKeyRef, windowSwitchISOHotKeyRef, windowSwitchReverseHotKeyRef, windowSwitchReverseISOHotKeyRef] {
+                if let ref = ref { UnregisterEventHotKey(ref) }
+            }
+            windowSwitchHotKeyRef = nil; windowSwitchISOHotKeyRef = nil
+            windowSwitchReverseHotKeyRef = nil; windowSwitchReverseISOHotKeyRef = nil
+        }
+    }
 
+    private func registerGlobalHotkey(_ keyCode: Int, _ modifiers: Int, _ hotkeyID: HotkeyID) -> EventHotKeyRef? {
+        installHotkeyHandlerIfNeeded()
+        var ref: EventHotKeyRef?
+        let id = EventHotKeyID(signature: HotkeyManager.signature, id: hotkeyID.rawValue)
+        RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), id, GetEventDispatcherTarget(), UInt32(kEventHotKeyNoOptions), &ref)
+        return ref
+    }
+
+    /// Install the Carbon handler that forwards presses to handleHotkeyPressed.
+    private func installHotkeyHandlerIfNeeded() {
+        guard hotKeyPressedHandler == nil else { return }
         var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: OSType(kEventHotKeyPressed))]
         let handler: EventHandlerUPP = { _, event, userData in
             var id = EventHotKeyID()
@@ -347,28 +377,7 @@ class HotkeyManager {
             return noErr
         }
         let userDataPtr = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(eventTarget, handler, eventTypes.count, &eventTypes, userDataPtr, &hotKeyPressedHandler)
-
-        // - Cmd+Tab and Cmd+Shift+Tab (Carbon needs an exact modifier match, so the
-        //   Shift variant is its own registration)
-
-        let id = EventHotKeyID(signature: HotkeyManager.signature, id: HotkeyID.tab.rawValue)
-        RegisterEventHotKey(UInt32(kVK_Tab), UInt32(cmdKey), id, eventTarget, UInt32(kEventHotKeyNoOptions), &tabHotKeyRef)
-        let shiftId = EventHotKeyID(signature: HotkeyManager.signature, id: HotkeyID.shiftTab.rawValue)
-        RegisterEventHotKey(UInt32(kVK_Tab), UInt32(cmdKey | shiftKey), shiftId, eventTarget, UInt32(kEventHotKeyNoOptions), &shiftTabHotKeyRef)
-
-        // - Cmd + the key left of "1" — window switcher. Grave (ANSI) and section
-        //   (ISO) so it works "left of 1" on any layout.
-
-        let windowId = EventHotKeyID(signature: HotkeyManager.signature, id: HotkeyID.windowSwitch.rawValue)
-        RegisterEventHotKey(UInt32(kVK_ANSI_Grave), UInt32(cmdKey), windowId, eventTarget, UInt32(kEventHotKeyNoOptions), &windowSwitchHotKeyRef)
-        RegisterEventHotKey(UInt32(kVK_ISO_Section), UInt32(cmdKey), windowId, eventTarget, UInt32(kEventHotKeyNoOptions), &windowSwitchISOHotKeyRef)
-
-        // - Cmd+Shift+ same key — reverse window cycling
-
-        let windowReverseId = EventHotKeyID(signature: HotkeyManager.signature, id: HotkeyID.windowSwitchReverse.rawValue)
-        RegisterEventHotKey(UInt32(kVK_ANSI_Grave), UInt32(cmdKey | shiftKey), windowReverseId, eventTarget, UInt32(kEventHotKeyNoOptions), &windowSwitchReverseHotKeyRef)
-        RegisterEventHotKey(UInt32(kVK_ISO_Section), UInt32(cmdKey | shiftKey), windowReverseId, eventTarget, UInt32(kEventHotKeyNoOptions), &windowSwitchReverseISOHotKeyRef)
+        InstallEventHandler(GetEventDispatcherTarget(), handler, eventTypes.count, &eventTypes, userDataPtr, &hotKeyPressedHandler)
     }
 
     /// Create the `.listenOnly` CGEvent tap (modifier release + mouse clicks).

@@ -53,10 +53,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
 
         prefsWindowController = PreferencesWindowController()
         prefsWindowController.onToggleMenuBar = { [weak self] _ in self?.refreshStatusItem() }
+        prefsWindowController.onToggleDisabledHotkeys = { [weak self] in self?.reconcileHotkeys() }
 
         // - Take over Cmd+Tab only once Accessibility is granted, then keep
         //   reconciling permission (enable when granted, quit if revoked)
 
+        reconcileHotkeys()
         if AccessibilityPermission.isGranted {
             enableSwitching()
         } else {
@@ -88,6 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
             panel.selectNext()  // already active — step forward
             return
         }
+        guard !Preferences.disableAppSwitcher else { hotkeyManager.isActive = false; return }
         openPanel(reverse: false)
     }
 
@@ -96,12 +99,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
             panel.selectPrevious()
             return
         }
+        guard !Preferences.disableAppSwitcher else { hotkeyManager.isActive = false; return }
         openPanel(reverse: true)
     }
 
     /// Cmd+`: open the window switcher (idle), dive into the selected app's windows
     /// (showing apps), or cycle windows (already in window mode).
     func hotkeyTriggeredWindows() {
+        guard !Preferences.disableWindowSwitcher else {
+            if state == .idle { hotkeyManager.isActive = false }
+            return
+        }
         switch state {
         case .idle:
             openWindowPanel(for: NSWorkspace.shared.frontmostApplication, reverse: false)
@@ -115,6 +123,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
     }
 
     func hotkeyTriggeredWindowsReverse() {
+        guard !Preferences.disableWindowSwitcher else {
+            if state == .idle { hotkeyManager.isActive = false }
+            return
+        }
         switch state {
         case .idle:
             openWindowPanel(for: NSWorkspace.shared.frontmostApplication, reverse: true)
@@ -313,15 +325,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
 
     // - Switching & Accessibility permission
 
-    /// Take over Cmd+Tab. Creates the event tap FIRST and disables native Cmd+Tab
-    /// only if that succeeds, so a permission failure never breaks the system.
+    /// Take over Cmd+Tab. Creates the event tap FIRST and takes the hotkeys only
+    /// if that succeeds, so a permission failure never breaks the system.
     private func enableSwitching() {
         guard !switchingEnabled else { return }
         guard hotkeyManager.tryCreateEventTap() else { return }  // permission gate
-        setNativeCommandTabEnabled(false)
-        hotkeyManager.registerHotkeys()
         switchingEnabled = true
+        reconcileHotkeys()
         print("Switching enabled.")
+    }
+
+    /// Own a global hotkey (registered + native off) while switching is enabled or
+    /// it's disabled in Preferences — a disabled one is a no-op that needs no
+    /// permission. Otherwise leave the native one alone.
+    private func reconcileHotkeys() {
+        let ownsApp = switchingEnabled || Preferences.disableAppSwitcher
+        let ownsWindow = switchingEnabled || Preferences.disableWindowSwitcher
+        hotkeyManager.setAppHotkeysRegistered(ownsApp)
+        hotkeyManager.setWindowHotkeysRegistered(ownsWindow)
+        setNativeCommandTabEnabled(!ownsApp, CGSSymbolicHotKey.appSwitcher)
+        setNativeCommandTabEnabled(!ownsWindow, CGSSymbolicHotKey.windowSwitcher)
     }
 
     /// Poll Accessibility permission and reconcile. A poll, not the tap-disabled

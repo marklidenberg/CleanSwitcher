@@ -7,7 +7,7 @@ Reports to its delegate; never touches the panel directly.
 
 - **Carbon hotkeys** — key presses (Cmd+Tab, arrows, H/Q/W/T, …). Chosen over a
   keyDown tap because they only need Accessibility permission, not Input
-  Monitoring. Cmd+Tab / Cmd+Shift+Tab / Cmd+` are registered globally; the rest
+  Monitoring. Cmd+Tab / Cmd+Shift+Tab / Cmd+` are registered globally (by AppDelegate); the rest
   only while the panel is active, plus a block of no-op "swallow" hotkeys so
   ordinary Cmd+key combos don't leak to the app behind the panel.
 - **CGEvent tap** (`.listenOnly`) — modifier release and mouse clicks only.

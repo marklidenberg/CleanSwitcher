@@ -6,9 +6,13 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
     /// Called with the new value when "Show icon in menu bar" changes.
     var onToggleMenuBar: ((Bool) -> Void)?
+    /// Called when a "Disable ⌘ …" checkbox changes.
+    var onToggleDisabledHotkeys: (() -> Void)?
 
     private var launchAtLoginCheckbox: NSButton!
     private var menuBarCheckbox: NSButton!
+    private var disableAppSwitcherCheckbox: NSButton!
+    private var disableWindowSwitcherCheckbox: NSButton!
     private var ttlField: NSTextField!
 
     convenience init() {
@@ -34,6 +38,9 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
         menuBarCheckbox = NSButton(checkboxWithTitle: "Show icon in menu bar", target: self, action: #selector(toggleMenuBar))
 
+        disableAppSwitcherCheckbox = NSButton(checkboxWithTitle: "Disable ⌘ Tab (no-op)", target: self, action: #selector(toggleDisableAppSwitcher))
+        disableWindowSwitcherCheckbox = NSButton(checkboxWithTitle: "Disable ⌘ ` (no-op)", target: self, action: #selector(toggleDisableWindowSwitcher))
+
         let quitButton = NSButton(title: "Quit CleanSwitcher", target: self, action: #selector(quit))
         quitButton.bezelStyle = .rounded
 
@@ -45,6 +52,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
         let stack = NSStackView(views: [
             launchAtLoginCheckbox, menuBarCheckbox, makeTTLRow(),
+            disableAppSwitcherCheckbox, disableWindowSwitcherCheckbox,
             makeSectionLabel("Shortcuts"), makeShortcutsGrid(), quitButton, versionLabel,
         ])
         stack.orientation = .vertical
@@ -179,6 +187,8 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         launchAtLoginCheckbox.state = LoginItem.isEnabled ? .on : .off
         menuBarCheckbox.state = Preferences.showMenuBarIcon ? .on : .off
         ttlField.stringValue = Self.formatMinutes(Preferences.mainRowTTLMinutes)
+        disableAppSwitcherCheckbox.state = Preferences.disableAppSwitcher ? .on : .off
+        disableWindowSwitcherCheckbox.state = Preferences.disableWindowSwitcher ? .on : .off
     }
 
     private func versionString() -> String {
@@ -198,11 +208,23 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         onToggleMenuBar?(enabled)
     }
 
+    @objc private func toggleDisableAppSwitcher() {
+        Preferences.disableAppSwitcher = disableAppSwitcherCheckbox.state == .on
+        onToggleDisabledHotkeys?()
+    }
+
+    @objc private func toggleDisableWindowSwitcher() {
+        Preferences.disableWindowSwitcher = disableWindowSwitcherCheckbox.state == .on
+        onToggleDisabledHotkeys?()
+    }
+
     /// Parse and persist the TTL, then re-render canonically. Unparseable input
     /// snaps back. Takes effect on the next Cmd+Tab.
     @objc private func commitTTL() {
         if let minutes = Self.parseMinutes(ttlField.stringValue) { Preferences.mainRowTTLMinutes = minutes }
         ttlField.stringValue = Self.formatMinutes(Preferences.mainRowTTLMinutes)
+        disableAppSwitcherCheckbox.state = Preferences.disableAppSwitcher ? .on : .off
+        disableWindowSwitcherCheckbox.state = Preferences.disableWindowSwitcher ? .on : .off
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {

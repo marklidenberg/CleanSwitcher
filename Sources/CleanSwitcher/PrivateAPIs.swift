@@ -8,13 +8,16 @@ enum CGSSymbolicHotKey: Int, CaseIterable {
     case commandTab = 1
     case commandShiftTab = 2
     case commandKeyAboveTab = 6
+
+    static let appSwitcher: [Self] = [.commandTab, .commandShiftTab]
+    static let windowSwitcher: [Self] = [.commandKeyAboveTab]
 }
 
 @_silgen_name("CGSSetSymbolicHotKeyEnabled") @discardableResult
 func CGSSetSymbolicHotKeyEnabled(_ hotKey: CGSSymbolicHotKey.RawValue, _ isEnabled: Bool) -> Int32
 
-func setNativeCommandTabEnabled(_ isEnabled: Bool) {
-    for hotkey in CGSSymbolicHotKey.allCases {
+func setNativeCommandTabEnabled(_ isEnabled: Bool, _ hotkeys: [CGSSymbolicHotKey] = CGSSymbolicHotKey.allCases) {
+    for hotkey in hotkeys {
         CGSSetSymbolicHotKeyEnabled(hotkey.rawValue, isEnabled)
     }
 }

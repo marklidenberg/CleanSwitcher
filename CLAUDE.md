@@ -8,6 +8,7 @@ A minimal Cmd+Tab replacement for macOS. Shows apps that own a window (or a Dock
 swift build --disable-sandbox        # debug
 swift build -c release --disable-sandbox
 .build/debug/CleanSwitcher
+./scripts/dev.sh --once              # deploy to /Applications (keeps Accessibility grant)
 ```
 
 Use `--disable-sandbox` when building from Claude Code (SPM's own `sandbox-exec` conflicts with the environment sandbox).
