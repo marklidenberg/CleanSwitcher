@@ -2,17 +2,19 @@ import Cocoa
 import Carbon
 
 protocol HotkeyManagerDelegate: AnyObject {
+    /// App shortcut (Cmd+Tab): open (from idle) or step forward (while active).
     func hotkeyTriggered()
-    /// Cmd+Shift+Tab: open in reverse (from idle) or step backward (while active).
+    /// App shortcut + Shift: open in reverse (from idle) or step backward (while active).
     func hotkeyTriggeredReverse()
-    /// Cmd+`: open the window switcher, dive into the selected app's windows, or
-    /// cycle windows (depending on state).
+    /// Window shortcut (Cmd+`): open the window switcher, dive into the selected
+    /// app's windows, or cycle windows (depending on state).
     func hotkeyTriggeredWindows()
-    /// Cmd+Shift+`: hotkeyTriggeredWindows cycling backward.
+    /// Window shortcut + Shift: hotkeyTriggeredWindows cycling backward.
     func hotkeyTriggeredWindowsReverse()
     func modifierKeyReleased()
     func keyPressed(_ keyCode: UInt16)
-    /// Shift tapped while Cmd is held, no Shift+Tab in between — "select previous".
+    /// Shift tapped while the hold modifiers are down, no Shift+Tab in between —
+    /// "select previous".
     func shiftTapped()
     func mouseClicked()
 }
@@ -26,15 +28,13 @@ class HotkeyManager {
     }()
 
     private var hotKeyPressedHandler: EventHandlerRef?
-    private var tabHotKeyRef: EventHotKeyRef?
-    private var shiftTabHotKeyRef: EventHotKeyRef?
-    // The key left of "1" is a different keycode on ANSI (grave, 50) vs ISO
-    // (section, 10) keyboards; register both.
-    private var windowSwitchHotKeyRef: EventHotKeyRef?
-    private var windowSwitchISOHotKeyRef: EventHotKeyRef?
-    private var windowSwitchReverseHotKeyRef: EventHotKeyRef?
-    private var windowSwitchReverseISOHotKeyRef: EventHotKeyRef?
+    private var appShortcut: Shortcut?
+    private var windowShortcut: Shortcut?
+    private var appHotKeyRefs: [EventHotKeyRef] = []
+    private var windowHotKeyRefs: [EventHotKeyRef] = []
     private var activeHotKeyRefs: [EventHotKeyRef?] = []
+    // The shortcut that opened the panel — its modifiers keep it open (main only).
+    private var holdShortcut = Shortcut.defaultAppSwitcher
     private var eventTap: CFMachPort?
 
     // Dedicated thread + run loop that services the event tap, so its callback is
@@ -46,11 +46,12 @@ class HotkeyManager {
 
     private let stateQueue = DispatchQueue(label: "com.cleanswitcher.state")
 
-    private var cmdWatchdog: DispatchSourceTimer?
-    private let watchdogQueue = DispatchQueue(label: "com.cleanswitcher.cmdwatchdog")
+    private var holdWatchdog: DispatchSourceTimer?
+    private let watchdogQueue = DispatchQueue(label: "com.cleanswitcher.holdwatchdog")
 
     // State protected by stateQueue.
     private var _isActive = false
+    private var _holdFlags = Shortcut.defaultAppSwitcher.holdFlags
     private var _shiftWasDown = false
     private var _tabSeenDuringShift = false
 
@@ -59,12 +60,17 @@ class HotkeyManager {
         set { stateQueue.sync { _isActive = newValue } }
     }
 
+    private var holdFlags: CGEventFlags {
+        get { stateQueue.sync { _holdFlags } }
+        set { stateQueue.sync { _holdFlags = newValue } }
+    }
+
     private var shiftWasDown: Bool {
         get { stateQueue.sync { _shiftWasDown } }
         set { stateQueue.sync { _shiftWasDown = newValue } }
     }
 
-    // Whether Cmd+Shift+Tab fired during the current Shift hold — distinguishes a
+    // Whether a reverse hotkey fired during the current Shift hold — distinguishes a
     // bare Shift tap from Shift held as part of Shift+Tab.
     private var tabSeenDuringShift: Bool {
         get { stateQueue.sync { _tabSeenDuringShift } }
@@ -82,10 +88,12 @@ class HotkeyManager {
         case upArrow = 8
         case downArrow = 9
         case shiftTab = 11
-        case windowSwitch = 12         // Cmd+`
-        case windowSwitchReverse = 13  // Cmd+Shift+`
+        case windowSwitch = 12
+        case windowSwitchReverse = 13
         case w = 14
         case t = 15
+        case tabNavigate = 16       // Tab while active, when the app shortcut isn't Tab
+        case shiftTabNavigate = 17
     }
 
     // Hotkeys that map to a delegate keyPressed(_:) call.
@@ -103,7 +111,7 @@ class HotkeyManager {
         HotkeyID.t.rawValue: UInt16(kVK_ANSI_T),
     ]
 
-    // Ordinary Cmd+key combos with no switcher action. Registered as no-op Carbon
+    // Ordinary hold+key combos with no switcher action. Registered as no-op Carbon
     // hotkeys while the panel is open so they're swallowed instead of leaking to
     // the app behind it. Excludes the action keys and W/T (registered separately).
     private static let swallowKeyCodes: [Int] = [
@@ -128,8 +136,8 @@ class HotkeyManager {
     func stop() {
         // - Unregister the global hotkeys
 
-        setAppHotkeysRegistered(false)
-        setWindowHotkeysRegistered(false)
+        setAppShortcut(nil)
+        setWindowShortcut(nil)
 
         // - Unregister the active-only hotkeys and stop repeats
 
@@ -159,67 +167,80 @@ class HotkeyManager {
         eventTapThread = nil
     }
 
-    /// Register the hotkeys that only work while the panel is active, then start the
-    /// watchdog and hold-repeat.
+    /// Register the hotkeys that only work while the panel is active — with the
+    /// hold modifiers of the shortcut that opened it — then start the watchdog and
+    /// hold-repeat. A combo already taken (e.g. Tab when the app shortcut is
+    /// Cmd+Tab) fails to register and the global hotkey handles it instead.
     func registerActiveHotkeys() {
         guard activeHotKeyRefs.isEmpty else { return }
         let eventTarget = GetEventDispatcherTarget()
+        let modifiers = holdShortcut.carbonModifiers
 
         // - Action hotkeys
 
-        let hotkeys: [(HotkeyID, Int)] = [
-            (.h, kVK_ANSI_H), (.q, kVK_ANSI_Q), (.w, kVK_ANSI_W), (.t, kVK_ANSI_T),
-            (.leftArrow, kVK_LeftArrow), (.rightArrow, kVK_RightArrow),
-            (.upArrow, kVK_UpArrow), (.downArrow, kVK_DownArrow),
-            (.escape, kVK_Escape), (.returnKey, kVK_Return),
+        let hotkeys: [(HotkeyID, Int, Int)] = [
+            (.h, kVK_ANSI_H, modifiers), (.q, kVK_ANSI_Q, modifiers), (.w, kVK_ANSI_W, modifiers), (.t, kVK_ANSI_T, modifiers),
+            (.leftArrow, kVK_LeftArrow, modifiers), (.rightArrow, kVK_RightArrow, modifiers),
+            (.upArrow, kVK_UpArrow, modifiers), (.downArrow, kVK_DownArrow, modifiers),
+            (.escape, kVK_Escape, modifiers), (.returnKey, kVK_Return, modifiers),
+            (.tabNavigate, kVK_Tab, modifiers), (.shiftTabNavigate, kVK_Tab, modifiers | shiftKey),
         ]
-        for (hotkeyID, keyCode) in hotkeys {
+        for (hotkeyID, keyCode, keyModifiers) in hotkeys {
             var ref: EventHotKeyRef?
             let id = EventHotKeyID(signature: HotkeyManager.signature, id: hotkeyID.rawValue)
-            RegisterEventHotKey(UInt32(keyCode), UInt32(cmdKey), id, eventTarget, UInt32(kEventHotKeyNoOptions), &ref)
+            RegisterEventHotKey(UInt32(keyCode), UInt32(keyModifiers), id, eventTarget, UInt32(kEventHotKeyNoOptions), &ref)
             activeHotKeyRefs.append(ref)
         }
 
-        // - Swallow every other Cmd+key combo (ids absent from hotkeyToKeyCode →
+        // - Swallow every other hold+key combo (ids absent from hotkeyToKeyCode →
         //   the handler no-ops them; the 0x1000 offset keeps them off the action ids)
 
         for keyCode in HotkeyManager.swallowKeyCodes {
             var ref: EventHotKeyRef?
             let id = EventHotKeyID(signature: HotkeyManager.signature, id: UInt32(0x1000 + keyCode))
-            RegisterEventHotKey(UInt32(keyCode), UInt32(cmdKey), id, eventTarget, UInt32(kEventHotKeyNoOptions), &ref)
+            RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), id, eventTarget, UInt32(kEventHotKeyNoOptions), &ref)
             activeHotKeyRefs.append(ref)
         }
 
-        startCmdWatchdog()
+        startHoldWatchdog()
         startHoldRepeat()
     }
 
     func unregisterActiveHotkeys() {
-        stopCmdWatchdog()
+        stopHoldWatchdog()
         stopHoldRepeat()
         for ref in activeHotKeyRefs where ref != nil { UnregisterEventHotKey(ref!) }
         activeHotKeyRefs.removeAll()
     }
 
-    /// Route a hotkey press to the delegate. Runs on the Carbon dispatch thread.
+    /// Route a hotkey press to the delegate. Runs on the Carbon dispatch thread
+    /// (main). A press from idle makes its shortcut the hold shortcut.
     func handleHotkeyPressed(_ id: UInt32) {
-        switch id {
-        case HotkeyID.tab.rawValue:
+        func open(with shortcut: Shortcut?) {
+            if !isActive, let shortcut = shortcut {
+                holdShortcut = shortcut
+                holdFlags = shortcut.holdFlags
+            }
             isActive = true
+        }
+
+        switch id {
+        case HotkeyID.tab.rawValue, HotkeyID.tabNavigate.rawValue:
+            open(with: appShortcut)
             DispatchQueue.main.async { self.delegate?.hotkeyTriggered() }
 
-        case HotkeyID.shiftTab.rawValue:
+        case HotkeyID.shiftTab.rawValue, HotkeyID.shiftTabNavigate.rawValue:
             // Mark the Shift hold so its release isn't also read as a bare tap.
-            isActive = true
+            open(with: appShortcut)
             tabSeenDuringShift = true
             DispatchQueue.main.async { self.delegate?.hotkeyTriggeredReverse() }
 
         case HotkeyID.windowSwitch.rawValue:
-            isActive = true
+            open(with: windowShortcut)
             DispatchQueue.main.async { self.delegate?.hotkeyTriggeredWindows() }
 
         case HotkeyID.windowSwitchReverse.rawValue:
-            isActive = true
+            open(with: windowShortcut)
             tabSeenDuringShift = true
             DispatchQueue.main.async { self.delegate?.hotkeyTriggeredWindowsReverse() }
 
@@ -240,16 +261,18 @@ class HotkeyManager {
         let tick = 0.04
         let initialDelayTicks = max(1, Int((SwitcherConfig.repeatInitialDelay / tick).rounded()))
         let repeatTicks = max(1, Int((SwitcherConfig.repeatInterval / tick).rounded()))
+        let holdFlags = self.holdFlags
+        let appKeyCode = appShortcut?.keyCode ?? kVK_Tab
 
         let timer = DispatchSource.makeTimerSource(queue: holdRepeatQueue)
         timer.schedule(deadline: .now() + tick, repeating: tick, leeway: .milliseconds(8))
         timer.setEventHandler { [weak self] in
             guard let self = self, self.isActive else { return }
 
-            // - Cmd must still be held
+            // - The hold modifiers must still be held
 
             let flags = CGEventSource.flagsState(.combinedSessionState)
-            guard flags.contains(.maskCommand) else { self.heldKeyCode = 0; self.heldTicks = 0; return }
+            guard flags.contains(holdFlags) else { self.heldKeyCode = 0; self.heldTicks = 0; return }
             let shift = flags.contains(.maskShift)
             func down(_ code: Int) -> Bool { CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(code)) }
 
@@ -258,8 +281,8 @@ class HotkeyManager {
 
             var code = 0
             var action: (() -> Void)?
-            if down(kVK_Tab) {
-                code = kVK_Tab
+            if down(kVK_Tab) || down(appKeyCode) {
+                code = down(kVK_Tab) ? kVK_Tab : appKeyCode
                 action = shift
                     ? { [weak self] in self?.delegate?.hotkeyTriggeredReverse() }
                     : { [weak self] in self?.delegate?.hotkeyTriggered() }
@@ -300,67 +323,59 @@ class HotkeyManager {
         }
     }
 
-    // - Cmd-release watchdog
-    //   Backstop for a dropped Cmd-up event: poll the live modifier state and
-    //   dismiss the moment Cmd is no longer physically held.
+    // - Hold-release watchdog
+    //   Backstop for a dropped modifier-up event: poll the live modifier state and
+    //   dismiss the moment the hold modifiers are no longer physically held.
 
-    private func startCmdWatchdog() {
-        guard cmdWatchdog == nil else { return }
+    private func startHoldWatchdog() {
+        guard holdWatchdog == nil else { return }
+        let holdFlags = self.holdFlags
         let timer = DispatchSource.makeTimerSource(queue: watchdogQueue)
         timer.schedule(deadline: .now() + 0.1, repeating: 0.1, leeway: .milliseconds(20))
         timer.setEventHandler { [weak self] in
             guard let self = self, self.isActive else { return }
-            if !CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) {
+            if !CGEventSource.flagsState(.combinedSessionState).contains(holdFlags) {
                 self.isActive = false  // mirror the tap's immediate-set
                 DispatchQueue.main.async { self.delegate?.modifierKeyReleased() }
             }
         }
-        cmdWatchdog = timer
+        holdWatchdog = timer
         timer.resume()
     }
 
-    private func stopCmdWatchdog() {
-        cmdWatchdog?.cancel()
-        cmdWatchdog = nil
+    private func stopHoldWatchdog() {
+        holdWatchdog?.cancel()
+        holdWatchdog = nil
     }
 
-    /// Cmd+Tab and Cmd+Shift+Tab (Carbon needs an exact modifier match, so the
-    /// Shift variant is its own registration). Idempotent.
-    func setAppHotkeysRegistered(_ registered: Bool) {
-        if registered {
-            guard tabHotKeyRef == nil else { return }
-            tabHotKeyRef = registerGlobalHotkey(kVK_Tab, cmdKey, .tab)
-            shiftTabHotKeyRef = registerGlobalHotkey(kVK_Tab, cmdKey | shiftKey, .shiftTab)
-        } else {
-            for ref in [tabHotKeyRef, shiftTabHotKeyRef] { if let ref = ref { UnregisterEventHotKey(ref) } }
-            tabHotKeyRef = nil; shiftTabHotKeyRef = nil
-        }
+    /// Register the app switcher's global hotkey (+ its Shift variant); nil
+    /// unregisters. Idempotent.
+    func setAppShortcut(_ shortcut: Shortcut?) {
+        guard shortcut != appShortcut else { return }
+        appHotKeyRefs.forEach { UnregisterEventHotKey($0) }
+        appHotKeyRefs = shortcut.map { registerGlobalHotkeys($0, .tab, reverse: .shiftTab) } ?? []
+        appShortcut = shortcut
     }
 
-    /// Cmd (+Shift) + the key left of "1" — window switcher. Grave (ANSI) and
-    /// section (ISO) so it works "left of 1" on any layout. Idempotent.
-    func setWindowHotkeysRegistered(_ registered: Bool) {
-        if registered {
-            guard windowSwitchHotKeyRef == nil else { return }
-            windowSwitchHotKeyRef = registerGlobalHotkey(kVK_ANSI_Grave, cmdKey, .windowSwitch)
-            windowSwitchISOHotKeyRef = registerGlobalHotkey(kVK_ISO_Section, cmdKey, .windowSwitch)
-            windowSwitchReverseHotKeyRef = registerGlobalHotkey(kVK_ANSI_Grave, cmdKey | shiftKey, .windowSwitchReverse)
-            windowSwitchReverseISOHotKeyRef = registerGlobalHotkey(kVK_ISO_Section, cmdKey | shiftKey, .windowSwitchReverse)
-        } else {
-            for ref in [windowSwitchHotKeyRef, windowSwitchISOHotKeyRef, windowSwitchReverseHotKeyRef, windowSwitchReverseISOHotKeyRef] {
-                if let ref = ref { UnregisterEventHotKey(ref) }
-            }
-            windowSwitchHotKeyRef = nil; windowSwitchISOHotKeyRef = nil
-            windowSwitchReverseHotKeyRef = nil; windowSwitchReverseISOHotKeyRef = nil
-        }
+    /// Register the window switcher's global hotkey (+ its Shift variant); nil
+    /// unregisters. Idempotent.
+    func setWindowShortcut(_ shortcut: Shortcut?) {
+        guard shortcut != windowShortcut else { return }
+        windowHotKeyRefs.forEach { UnregisterEventHotKey($0) }
+        windowHotKeyRefs = shortcut.map { registerGlobalHotkeys($0, .windowSwitch, reverse: .windowSwitchReverse) } ?? []
+        windowShortcut = shortcut
     }
 
-    private func registerGlobalHotkey(_ keyCode: Int, _ modifiers: Int, _ hotkeyID: HotkeyID) -> EventHotKeyRef? {
+    /// Carbon needs an exact modifier match, so the Shift variant is its own registration.
+    private func registerGlobalHotkeys(_ shortcut: Shortcut, _ hotkeyID: HotkeyID, reverse reverseID: HotkeyID) -> [EventHotKeyRef] {
         installHotkeyHandlerIfNeeded()
-        var ref: EventHotKeyRef?
-        let id = EventHotKeyID(signature: HotkeyManager.signature, id: hotkeyID.rawValue)
-        RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), id, GetEventDispatcherTarget(), UInt32(kEventHotKeyNoOptions), &ref)
-        return ref
+        let registrations = shortcut.keyCodes.flatMap { [($0, shortcut.carbonModifiers, hotkeyID), ($0, shortcut.carbonModifiers | shiftKey, reverseID)] }
+        return registrations.compactMap { keyCode, modifiers, id in
+            var ref: EventHotKeyRef?
+            let hotkeyID = EventHotKeyID(signature: HotkeyManager.signature, id: id.rawValue)
+            RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), hotkeyID, GetEventDispatcherTarget(), UInt32(kEventHotKeyNoOptions), &ref)
+            return ref
+        }
     }
 
     /// Install the Carbon handler that forwards presses to handleHotkeyPressed.
@@ -399,11 +414,11 @@ class HotkeyManager {
             if type == .flagsChanged {
                 let flags = event.flags
                 let shiftIsDown = flags.contains(.maskShift)
-                let cmdIsDown = flags.contains(.maskCommand)
+                let holdIsDown = flags.contains(manager.holdFlags)
 
-                // - Detect a bare Shift tap while Cmd is held
+                // - Detect a bare Shift tap while the hold modifiers are down
 
-                if cmdIsDown {
+                if holdIsDown {
                     if shiftIsDown && !manager.shiftWasDown {
                         // Fresh Shift hold — the release decides between a bare tap
                         // and Shift+Tab (which marks tabSeenDuringShift).
@@ -414,9 +429,9 @@ class HotkeyManager {
                     manager.shiftWasDown = shiftIsDown
                 }
 
-                // - Cmd released → dismiss
+                // - Hold modifiers released → dismiss
 
-                if !cmdIsDown {
+                if !holdIsDown {
                     manager.shiftWasDown = false
                     manager.isActive = false
                     DispatchQueue.main.async { manager.delegate?.modifierKeyReleased() }
@@ -448,7 +463,7 @@ class HotkeyManager {
         }
 
         // - Service the tap on a dedicated high-priority thread + run loop, so the
-        //   Cmd-release callback isn't starved by main-thread UI work
+        //   hold-release callback isn't starved by main-thread UI work
 
         stateQueue.sync { _tapStopRequested = false }
         let thread = Thread { [weak self] in

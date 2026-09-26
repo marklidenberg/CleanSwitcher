@@ -1,18 +1,29 @@
 import Cocoa
+import Carbon
 
 /// A small, programmatic Preferences window. One instance is held by AppDelegate
 /// and reused on every show.
-class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
+class PreferencesWindowController: NSWindowController, NSTextFieldDelegate, NSWindowDelegate {
 
     /// Called with the new value when "Show icon in menu bar" changes.
     var onToggleMenuBar: ((Bool) -> Void)?
-    /// Called when a hotkey mode changes.
-    var onChangeHotkeyMode: (() -> Void)?
+    /// Called when a switcher's mode or shortcut changes.
+    var onChangeHotkeys: (() -> Void)?
+    /// Called with true when a shortcut recorder starts listening, false when it stops.
+    var onRecordingShortcut: ((Bool) -> Void)?
 
     private var launchAtLoginCheckbox: NSButton!
     private var menuBarCheckbox: NSButton!
     private var appSwitcherModePopup: NSPopUpButton!
     private var windowSwitcherModePopup: NSPopUpButton!
+    private var appShortcutButton: NSButton!
+    private var windowShortcutButton: NSButton!
+    private var recordingButton: NSButton?
+    private var keyMonitor: Any?
+    // Shortcuts-grid rows that show the configurable shortcuts
+    private var appShortcutGridLabel: NSTextField!
+    private var appReverseShortcutGridLabel: NSTextField!
+    private var windowShortcutGridLabel: NSTextField!
     private var raiseAllWindowsCheckbox: NSButton!
     private var maximizeNewWindowsCheckbox: NSButton!
     private var hideOtherAppsCheckbox: NSButton!
@@ -28,6 +39,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         window.center()
 
         self.init(window: window)
+        window.delegate = self
         setupContent()
     }
 
@@ -43,6 +55,8 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
         appSwitcherModePopup = makeModePopup()
         windowSwitcherModePopup = makeModePopup()
+        appShortcutButton = makeShortcutButton()
+        windowShortcutButton = makeShortcutButton()
         raiseAllWindowsCheckbox = NSButton(checkboxWithTitle: "Bring all windows forward when switching apps", target: self, action: #selector(toggleRaiseAllWindows))
         maximizeNewWindowsCheckbox = NSButton(checkboxWithTitle: "Open new windows maximized", target: self, action: #selector(toggleMaximizeNewWindows))
         hideOtherAppsCheckbox = NSButton(checkboxWithTitle: "Hide other apps when switching", target: self, action: #selector(toggleHideOtherApps))
@@ -58,7 +72,8 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
 
         let stack = NSStackView(views: [
             launchAtLoginCheckbox, menuBarCheckbox, makeTTLRow(),
-            makeModeRow("⌘ Tab", appSwitcherModePopup), makeModeRow("⌘ `", windowSwitcherModePopup), raiseAllWindowsCheckbox, maximizeNewWindowsCheckbox, hideOtherAppsCheckbox,
+            makeSwitcherRow("App switcher", appShortcutButton, appSwitcherModePopup),
+            makeSwitcherRow("Window switcher", windowShortcutButton, windowSwitcherModePopup), raiseAllWindowsCheckbox, maximizeNewWindowsCheckbox, hideOtherAppsCheckbox,
             makeSectionLabel("Shortcuts"), makeShortcutsGrid(), quitButton, versionLabel,
         ])
         stack.orientation = .vertical
@@ -108,11 +123,18 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         return popup
     }
 
-    /// "⌘ Tab   [ Normal ▾ ]"
-    private func makeModeRow(_ title: String, _ popup: NSPopUpButton) -> NSView {
+    private func makeShortcutButton() -> NSButton {
+        let button = NSButton(title: "", target: self, action: #selector(startRecording(_:)))
+        button.bezelStyle = .rounded
+        button.widthAnchor.constraint(equalToConstant: 110).isActive = true
+        return button
+    }
+
+    /// "App switcher   [ ⌘ Tab ]  [ Normal ▾ ]"
+    private func makeSwitcherRow(_ title: String, _ shortcutButton: NSButton, _ popup: NSPopUpButton) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.widthAnchor.constraint(equalToConstant: 50).isActive = true
-        let row = NSStackView(views: [label, popup])
+        label.widthAnchor.constraint(equalToConstant: 105).isActive = true
+        let row = NSStackView(views: [label, shortcutButton, popup])
         row.orientation = .horizontal
         row.alignment = .firstBaseline
         row.spacing = 8
@@ -129,9 +151,9 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
     /// Read-only two-column reference of the switcher's shortcuts.
     private func makeShortcutsGrid() -> NSView {
         let shortcuts: [(String, String)] = [
-            ("⌘ Tab", "Next app"),
-            ("⌘ ⇧ Tab", "Previous app"),
-            ("⌘ ` (key left of 1)", "Switch the app's windows"),
+            ("", "Next app"),
+            ("", "Previous app"),
+            ("", "Switch the app's windows"),
             ("Tab / →", "Next  (hold to repeat)"),
             ("⇧ Tab / ←", "Previous  (hold to repeat)"),
             ("↑ / ↓", "Move between rows"),
@@ -151,6 +173,10 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
             actionLabel.textColor = .secondaryLabelColor
             return [keyLabel, actionLabel]
         }
+
+        appShortcutGridLabel = rows[0][0] as? NSTextField
+        appReverseShortcutGridLabel = rows[1][0] as? NSTextField
+        windowShortcutGridLabel = rows[2][0] as? NSTextField
 
         let grid = NSGridView(views: rows)
         grid.rowSpacing = 5
@@ -218,6 +244,67 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
         raiseAllWindowsCheckbox.state = Preferences.raiseAllWindows ? .on : .off
         maximizeNewWindowsCheckbox.state = Preferences.maximizeNewWindows ? .on : .off
         hideOtherAppsCheckbox.state = Preferences.hideOtherAppsOnSwitch ? .on : .off
+        syncShortcutLabels()
+    }
+
+    private func syncShortcutLabels() {
+        let app = Preferences.appSwitcherShortcut, window = Preferences.windowSwitcherShortcut
+        if recordingButton !== appShortcutButton { appShortcutButton.title = app.displayString() }
+        if recordingButton !== windowShortcutButton { windowShortcutButton.title = window.displayString() }
+        appShortcutGridLabel.stringValue = app.displayString()
+        appReverseShortcutGridLabel.stringValue = app.displayString(reverse: true)
+        windowShortcutGridLabel.stringValue = window.displayString()
+    }
+
+    // - Shortcut recording
+    //   Click a shortcut button, then type the combo. Esc cancels, ⌫ restores the
+    //   default. It needs ⌘/⌥/⌃, no ⇧ (reserved for reverse), and must differ from
+    //   the other switcher's.
+
+    @objc private func startRecording(_ sender: NSButton) {
+        stopRecording()
+        recordingButton = sender
+        sender.title = "Type shortcut…"
+        onRecordingShortcut?(true)
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.record(event)
+            return nil
+        }
+    }
+
+    private func record(_ event: NSEvent) {
+        guard let button = recordingButton else { return }
+        let isApp = button === appShortcutButton
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let keyCode = Int(event.keyCode)
+        let hasNoModifiers = modifiers.intersection([.command, .option, .control, .shift]).isEmpty
+
+        if hasNoModifiers && keyCode == kVK_Escape { stopRecording(); return }
+
+        let shortcut = hasNoModifiers && keyCode == kVK_Delete
+            ? (isApp ? Shortcut.defaultAppSwitcher : .defaultWindowSwitcher)
+            : Shortcut(keyCode: keyCode, modifiers: modifiers)
+        let other = isApp ? Preferences.windowSwitcherShortcut : Preferences.appSwitcherShortcut
+        guard !shortcut.modifiers.isEmpty, !modifiers.contains(.shift), shortcut != other else {
+            NSSound.beep()
+            return
+        }
+
+        if isApp { Preferences.appSwitcherShortcut = shortcut } else { Preferences.windowSwitcherShortcut = shortcut }
+        stopRecording()
+    }
+
+    private func stopRecording() {
+        guard recordingButton != nil else { return }
+        if let keyMonitor = keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        recordingButton = nil
+        syncShortcutLabels()
+        onRecordingShortcut?(false)  // re-registers with the (possibly new) shortcuts
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        stopRecording()
     }
 
     private func versionString() -> String {
@@ -240,7 +327,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate {
     @objc private func changeHotkeyMode() {
         Preferences.appSwitcherMode = Preferences.HotkeyMode.allCases[appSwitcherModePopup.indexOfSelectedItem]
         Preferences.windowSwitcherMode = Preferences.HotkeyMode.allCases[windowSwitcherModePopup.indexOfSelectedItem]
-        onChangeHotkeyMode?()
+        onChangeHotkeys?()
     }
 
     @objc private func toggleRaiseAllWindows() {

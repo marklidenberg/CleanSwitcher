@@ -24,6 +24,8 @@ Ad-hoc signed, not notarized.
 | Cmd+Q | Quit app |
 | Cmd+W | Close window |
 
+The two switcher shortcuts can be changed in Preferences.
+
 ## How it looks
 
 ### Before (native MacOS Switcher)

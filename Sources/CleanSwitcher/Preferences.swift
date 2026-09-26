@@ -8,6 +8,8 @@ enum Preferences {
         static let mainRowTTLMinutes = "mainRowTTLMinutes"
         static let appSwitcherMode = "appSwitcherMode"
         static let windowSwitcherMode = "windowSwitcherMode"
+        static let appSwitcherShortcut = "appSwitcherShortcut"
+        static let windowSwitcherShortcut = "windowSwitcherShortcut"
         static let raiseAllWindows = "raiseAllWindows"
         static let maximizeNewWindows = "maximizeNewWindows"
         static let hideOtherAppsOnSwitch = "hideOtherAppsOnSwitch"
@@ -52,6 +54,22 @@ enum Preferences {
     static var windowSwitcherMode: HotkeyMode {
         get { defaults.string(forKey: Key.windowSwitcherMode).flatMap(HotkeyMode.init) ?? .normal }
         set { defaults.set(newValue.rawValue, forKey: Key.windowSwitcherMode) }
+    }
+
+    static var appSwitcherShortcut: Shortcut {
+        get { shortcut(forKey: Key.appSwitcherShortcut) ?? .defaultAppSwitcher }
+        set { defaults.set([newValue.keyCode, Int(newValue.modifiers.rawValue)], forKey: Key.appSwitcherShortcut) }
+    }
+
+    static var windowSwitcherShortcut: Shortcut {
+        get { shortcut(forKey: Key.windowSwitcherShortcut) ?? .defaultWindowSwitcher }
+        set { defaults.set([newValue.keyCode, Int(newValue.modifiers.rawValue)], forKey: Key.windowSwitcherShortcut) }
+    }
+
+    /// Stored as `[keyCode, modifierFlags]`.
+    private static func shortcut(forKey key: String) -> Shortcut? {
+        guard let pair = defaults.array(forKey: key) as? [Int], pair.count == 2 else { return nil }
+        return Shortcut(keyCode: pair[0], modifiers: NSEvent.ModifierFlags(rawValue: UInt(pair[1])))
     }
 
     /// Any app activation (Spotlight, Dock, click, switcher) brings all its windows forward.

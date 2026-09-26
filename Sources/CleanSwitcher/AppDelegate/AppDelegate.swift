@@ -80,7 +80,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
 
         prefsWindowController = PreferencesWindowController()
         prefsWindowController.onToggleMenuBar = { [weak self] _ in self?.refreshStatusItem() }
-        prefsWindowController.onChangeHotkeyMode = { [weak self] in self?.reconcileHotkeys() }
+        prefsWindowController.onChangeHotkeys = { [weak self] in self?.reconcileHotkeys() }
+        prefsWindowController.onRecordingShortcut = { [weak self] isRecording in
+            guard let self = self else { return }
+            if isRecording {
+                // Free every candidate combo so the recorder receives it as a key event
+                self.hotkeyManager.setAppShortcut(nil)
+                self.hotkeyManager.setWindowShortcut(nil)
+                setNativeCommandTabEnabled(false)
+            } else {
+                self.reconcileHotkeys()
+            }
+        }
 
         // - Take over Cmd+Tab only once Accessibility is granted, then keep
         //   reconciling permission (enable when granted, quit if revoked)
@@ -398,16 +409,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         print("Switching enabled.")
     }
 
-    /// Own a global hotkey (registered + native off) while switching is enabled or
-    /// it's disabled in Preferences — a disabled one is a no-op that needs no
-    /// permission. Otherwise leave the native one alone.
+    /// Own a switcher's shortcut while switching is enabled or its mode is Disabled
+    /// (a no-op that needs no permission). The native Cmd+Tab / Cmd+` is turned
+    /// off only while an owned shortcut is exactly that combo.
     private func reconcileHotkeys() {
         let ownsApp = switchingEnabled || Preferences.appSwitcherMode == .disabled
         let ownsWindow = switchingEnabled || Preferences.windowSwitcherMode == .disabled
-        hotkeyManager.setAppHotkeysRegistered(ownsApp)
-        hotkeyManager.setWindowHotkeysRegistered(ownsWindow)
-        setNativeCommandTabEnabled(!ownsApp, CGSSymbolicHotKey.appSwitcher)
-        setNativeCommandTabEnabled(!ownsWindow, CGSSymbolicHotKey.windowSwitcher)
+        hotkeyManager.setAppShortcut(ownsApp ? Preferences.appSwitcherShortcut : nil)
+        hotkeyManager.setWindowShortcut(ownsWindow ? Preferences.windowSwitcherShortcut : nil)
+        setNativeCommandTabEnabled(!(ownsApp && Preferences.appSwitcherShortcut == .defaultAppSwitcher), CGSSymbolicHotKey.appSwitcher)
+        setNativeCommandTabEnabled(!(ownsWindow && Preferences.windowSwitcherShortcut == .defaultWindowSwitcher), CGSSymbolicHotKey.windowSwitcher)
     }
 
     /// Poll Accessibility permission and reconcile. A poll, not the tap-disabled

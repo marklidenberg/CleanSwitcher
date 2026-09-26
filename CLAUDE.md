@@ -27,6 +27,7 @@ WindowListProvider   per-app windows via AX, recency split, focus tracker
 SwitcherItem         one panel tile (app or window)
 Preferences          UserDefaults wrapper
 LoginItem            start-at-login (SMAppService)
+Shortcut             a switcher hotkey (key + ⌘/⌥/⌃), display string
 PrivateAPIs          CGSSetSymbolicHotKeyEnabled (native Cmd+Tab), _AXUIElementGetWindow
 main.swift           entry + crash/quit restore of native Cmd+Tab
 ```
@@ -35,7 +36,7 @@ Needs Accessibility permission (not Input Monitoring). Without it, native Cmd+Ta
 
 ## Shortcuts
 
-- **Cmd+Tab** — app switcher. **Cmd+«key left of 1»** — window switcher.
+- **Cmd+Tab** — app switcher. **Cmd+«key left of 1»** — window switcher. Both configurable in Preferences.
 - Tab / Shift+Tab / arrows navigate (hold to repeat). **T** toggles older-apps section.
 - **Return** or release Cmd activates; **Escape** dismisses. **H** hide others, **Q** quit app, **W** close window.
 
