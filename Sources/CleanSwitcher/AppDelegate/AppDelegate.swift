@@ -55,14 +55,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         prefsWindowController.onToggleMenuBar = { [weak self] _ in self?.refreshStatusItem() }
         prefsWindowController.onChangeHotkeyMode = { [weak self] in self?.reconcileHotkeys() }
 
-        // - On any activation (opt-in): bring all its windows forward, hide other apps
+        // - On any activation (opt-in): bring all its windows forward, hide other apps.
+        //   Never issues an activation itself — that would re-fire this observer and
+        //   ping-pong with any activation still in flight.
 
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] notification in
             guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app != NSRunningApplication.current else { return }
-            if Preferences.raiseAllWindows { app.activate(options: [.activateAllWindows]) }
+                  app != NSRunningApplication.current, app == NSWorkspace.shared.frontmostApplication else { return }
+            if Preferences.raiseAllWindows { WindowListProvider.raiseAll(of: app) }
             if Preferences.hideOtherAppsOnSwitch { self?.hideApps(except: app.processIdentifier) }
         }
 

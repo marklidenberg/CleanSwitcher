@@ -29,9 +29,12 @@ Disabled     no-op; still registered, native one stays off — even without perm
 On every app activation, whatever caused it (Spotlight, Dock, click, switcher),
 two opt-ins apply:
 
-- "Bring all windows forward" — re-activates the app with all its windows.
+- "Bring all windows forward" — raises all its windows via AX.
 - "Hide other apps when switching" — hides every other app (instant, no
   animation); activating a hidden app unhides it.
+
+The observer never activates an app itself: activation is async, so it would
+re-fire the observer and ping-pong with an in-flight one (endless fast switching).
 
 "Open new windows maximized" (opt-in, needs permission) resizes each new
 standard window of any app to fill its screen (menu bar and Dock excluded).

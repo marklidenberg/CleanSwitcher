@@ -119,6 +119,16 @@ enum WindowListProvider {
         AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
     }
 
+    /// Bring all of `app`'s non-minimized windows forward via AX raise (no
+    /// activation request), back to front so their order is kept.
+    static func raiseAll(of app: NSRunningApplication) {
+        for window in windows(for: app).reversed() {
+            var minimized: CFTypeRef?
+            AXUIElementCopyAttributeValue(window.axWindow, kAXMinimizedAttribute as CFString, &minimized)
+            if minimized as? Bool != true { AXUIElementPerformAction(window.axWindow, kAXRaiseAction as CFString) }
+        }
+    }
+
     /// Bring a window to the front: un-minimize, raise, activate its app, stamp focus.
     static func raise(_ window: WindowInfo) {
         AXUIElementSetAttributeValue(window.axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
