@@ -23,7 +23,7 @@ enum Preferences {
         static let appsHoverStyle = "appsHoverStyle"
         static let appsUnmatchedOpacity = "appsUnmatchedOpacity"
         static let appsRecentRunningOnly = "appsRecentRunningOnly"
-        static let appsLettersPinnedOnly = "appsLettersPinnedOnly"
+        static let appsLettersRecent = "appsLettersRecent"
         static let appsLettersPause = "appsLettersPause"
         static let appsShape = "appsShape"
         static let appsSeparator = "appsSeparator"
@@ -53,6 +53,7 @@ enum Preferences {
             Key.appsHoverStyle: HoverStyle.backdrop.rawValue,
             Key.appsUnmatchedOpacity: 15,
             Key.appsLettersPause: 400,
+            Key.appsLettersRecent: true,
             Key.appsShape: "pill",
             Key.appsSeparator: false,
             Key.appsPinnedSize: 64,
@@ -189,10 +190,10 @@ enum Preferences {
         set { defaults.set(newValue.rawValue, forKey: Key.appsLetters) }
     }
 
-    /// Letters on the pinned only.
-    static var appsLettersPinnedOnly: Bool {
-        get { defaults.bool(forKey: Key.appsLettersPinnedOnly) }
-        set { defaults.set(newValue, forKey: Key.appsLettersPinnedOnly) }
+    /// Letters on the recent too — after the pinned's, longer where they clash.
+    static var appsLettersRecent: Bool {
+        get { defaults.bool(forKey: Key.appsLettersRecent) }
+        set { defaults.set(newValue, forKey: Key.appsLettersRecent) }
     }
 
     /// The pause, in ms, after an app's letters before it opens.

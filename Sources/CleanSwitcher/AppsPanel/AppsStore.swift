@@ -6,11 +6,13 @@ import Foundation
 /// rows     the pinned, row by row, in the user's order
 /// slots    each recent one's slot in the recent grid — fixed while it stays recent; gaps allowed
 /// hidden   never among the recent
+/// names    the user's name for an app — its letters made of it
 /// ```
 struct AppsStore: Codable {
     var rows: [[String]] = []
     var slots: [String: Int] = [:]
     var hidden: [String] = []
+    var names: [String: String] = [:]
 
     init() {}
 
@@ -20,6 +22,7 @@ struct AppsStore: Codable {
         rows = try container.decodeIfPresent([[String]].self, forKey: .rows) ?? []
         slots = try container.decodeIfPresent([String: Int].self, forKey: .slots) ?? [:]
         hidden = try container.decodeIfPresent([String].self, forKey: .hidden) ?? []
+        names = try container.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
         if rows.isEmpty, let pinned = try container.decodeIfPresent([String].self, forKey: .pinned), !pinned.isEmpty {
             rows = stride(from: 0, to: pinned.count, by: 7).map { Array(pinned[$0..<min($0 + 7, pinned.count)]) }
         }
@@ -33,9 +36,10 @@ struct AppsStore: Codable {
         try container.encode(rows, forKey: .rows)
         try container.encode(slots, forKey: .slots)
         try container.encode(hidden, forKey: .hidden)
+        try container.encode(names, forKey: .names)
     }
 
-    private enum Keys: String, CodingKey { case rows, slots, hidden, pinned, appeared }
+    private enum Keys: String, CodingKey { case rows, slots, hidden, names, pinned, appeared }
 
     static func load() -> AppsStore {
         Preferences.appsState.flatMap { try? JSONDecoder().decode(AppsStore.self, from: $0) } ?? AppsStore()

@@ -30,7 +30,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate, NSWi
     private let restDelaySlider = NSSlider(value: 200, minValue: 10, maxValue: 1000, target: nil, action: nil)
     private let restDelayValue = NSTextField(labelWithString: "")
     private let lettersPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let lettersPinnedCheckbox = NSButton(checkboxWithTitle: "Pinned only", target: nil, action: nil)
+    private let lettersRecentCheckbox = NSButton(checkboxWithTitle: "Recent too", target: nil, action: nil)
     private let lettersPauseSlider = NSSlider(value: 400, minValue: 10, maxValue: 1500, target: nil, action: nil)
     private let lettersPauseValue = NSTextField(labelWithString: "")
     private var shapePopup: NSPopUpButton!
@@ -431,13 +431,13 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate, NSWi
     ///  Open after a pause of ——○—— 400 ms"
     private func makeLettersRow() -> NSView {
         lettersPopup.addItems(withTitles: ["Off", "Search after a pause", "No search"])
-        for control in [lettersPopup, lettersPinnedCheckbox, lettersPauseSlider] as [NSControl] {
+        for control in [lettersPopup, lettersRecentCheckbox, lettersPauseSlider] as [NSControl] {
             control.target = self
             control.action = #selector(changeLetters)
         }
         lettersPauseSlider.widthAnchor.constraint(equalToConstant: 100).isActive = true
         lettersPauseValue.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        let top = NSStackView(views: [lettersPopup, lettersPinnedCheckbox])
+        let top = NSStackView(views: [lettersPopup, lettersRecentCheckbox])
         let bottom = NSStackView(views: [NSTextField(labelWithString: "Open after a pause of"), lettersPauseSlider, lettersPauseValue])
         for row in [top, bottom] { row.alignment = .centerY; row.spacing = 8 }
         let rows = NSStackView(views: [top, bottom])
@@ -450,8 +450,8 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate, NSWi
     private func syncLetters() {
         let mode = Preferences.appsLetters
         lettersPopup.selectItem(at: Preferences.LettersMode.allCases.firstIndex(of: mode) ?? 0)
-        lettersPinnedCheckbox.state = Preferences.appsLettersPinnedOnly ? .on : .off
-        lettersPinnedCheckbox.isEnabled = mode != .off
+        lettersRecentCheckbox.state = Preferences.appsLettersRecent ? .on : .off
+        lettersRecentCheckbox.isEnabled = mode != .off
         lettersPauseSlider.doubleValue = Double(Preferences.appsLettersPause)
         lettersPauseSlider.isEnabled = mode != .off
         lettersPauseValue.stringValue = "\(Preferences.appsLettersPause) ms"
@@ -460,7 +460,7 @@ class PreferencesWindowController: NSWindowController, NSTextFieldDelegate, NSWi
     /// Saved; the sample drawn with the letters.
     @objc private func changeLetters() {
         Preferences.appsLetters = Preferences.LettersMode.allCases[lettersPopup.indexOfSelectedItem]
-        Preferences.appsLettersPinnedOnly = lettersPinnedCheckbox.state == .on
+        Preferences.appsLettersRecent = lettersRecentCheckbox.state == .on
         Preferences.appsLettersPause = Int((lettersPauseSlider.doubleValue / 10).rounded()) * 10
         syncLetters()
         onChangeAppsLook?()

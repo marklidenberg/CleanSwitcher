@@ -35,6 +35,7 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
     private var typedLetters = ""                // typed so far, of the letters
     private var typedText = ""                   // the same keys as typed — the search's text, if it comes to that
     private var letterTimer: Timer?
+    private var renaming: String?                // the app whose name is in the rename field
     /// CleanSwitcher itself, chosen: its settings.
     var onOpenSettings: (() -> Void)?
     private var activationObserver: NSObjectProtocol?  // the app opening: in front — the panel goes
@@ -51,7 +52,7 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
     private let separator = CALayer()
     private let hideArea = CAShapeLayer()
     private let hideLabel = CATextLayer()
-    private let nameLabel = NSTextField(labelWithString: "")
+    private let renameField = NSTextField()
     private let searchField = NSTextField()
     private let results = SearchList()
 
@@ -93,7 +94,7 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         box.addSubview(glass)
         canvas.addSubview(box)
 
-        // -- The line, the hide area, the name on hover
+        // -- The line, the hide area, the rename field
 
         separator.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
         hideArea.fillColor = NSColor.white.withAlphaComponent(0.04).cgColor
@@ -107,14 +108,11 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         hideLabel.contentsScale = 2
         hideArea.addSublayer(hideLabel)
         for sublayer in [separator, hideArea] { canvas.layer?.addSublayer(sublayer) }
-        nameLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        nameLabel.textColor = .white
-        nameLabel.alignment = .center
-        nameLabel.wantsLayer = true
-        nameLabel.layer?.shadowOpacity = 0.9
-        nameLabel.layer?.shadowRadius = 3
-        nameLabel.layer?.shadowOffset = .zero
-        nameLabel.isHidden = true
+        renameField.font = .systemFont(ofSize: 12, weight: .medium)
+        renameField.alignment = .center
+        renameField.bezelStyle = .roundedBezel
+        renameField.delegate = self
+        renameField.isHidden = true
 
         // -- The search: in the box, unseen until something is typed — the canvas takes the keys till then
 
@@ -126,7 +124,7 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         searchField.delegate = self
         results.onOpen = { [weak self] id in self?.openApp(id) }
         results.onPin = { [weak self] id in self?.togglePin(id) }
-        for view in [searchField, results, nameLabel] as [NSView] { canvas.addSubview(view) }
+        for view in [searchField, results, renameField] as [NSView] { canvas.addSubview(view) }
 
         let content = NSView()
         content.addSubview(canvas)
@@ -188,6 +186,8 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         drag = nil
         restTimer?.invalidate()
         letterTimer?.invalidate()
+        renaming = nil
+        renameField.isHidden = true
         activationObserver.map(NSWorkspace.shared.notificationCenter.removeObserver)
         activationObserver = nil
         if let monitor = clickMonitor { NSEvent.removeMonitor(monitor) }
@@ -209,7 +209,6 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         letterTimer?.invalidate()
         opening = false
         results.show([])
-        nameLabel.isHidden = true
         running = [:]
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && app != NSRunningApplication.current {
             if let id = app.bundleIdentifier { running[id] = app }
@@ -236,7 +235,13 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
 
     private func url(_ id: String) -> URL? { running[id]?.bundleURL ?? installed[id] ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) }
 
+    /// The user's name for it, else its own.
     private func name(_ id: String) -> String {
+        let name = id == renaming ? renameField.stringValue.trimmingCharacters(in: .whitespaces) : store.names[id]
+        return name.flatMap { $0.isEmpty ? nil : $0 } ?? ownName(id)
+    }
+
+    private func ownName(_ id: String) -> String {
         running[id]?.localizedName ?? url(id).map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? id
     }
 
@@ -253,7 +258,6 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         guard !previewing else { return }
         opening = true
         letterTimer?.invalidate()
-        nameLabel.isHidden = true
         if id == Bundle.main.bundleIdentifier {
             dismiss()
             return onOpenSettings?() ?? ()
@@ -367,9 +371,13 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         results.isHidden = !searching || results.isEmpty
         box.frame = boxFrame
 
-        // - The letters, where they're on: every icon's, or the pinned's
+        // - The letters, where they're on: the pinned's among themselves; the recent's too — none a pinned one's start
 
-        letters = Preferences.appsLetters != .off && !searching ? makeLetters(placed.map(\.0).filter { !Preferences.appsLettersPinnedOnly || store.isPinned($0) }) : [:]
+        letters = [:]
+        if Preferences.appsLetters != .off && !searching {
+            letters = makeLetters(placed.map(\.0).filter(store.isPinned))
+            if Preferences.appsLettersRecent { letters.merge(makeLetters(placed.map(\.0).filter { !store.isPinned($0) }, avoiding: Array(letters.values))) { pinned, _ in pinned } }
+        }
 
         // - The icons
 
@@ -379,7 +387,7 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
             let view = views[id] ?? {
                 let view = AppIconView(id: id, icon: icon(id))
                 view.delegate = self
-                canvas.addSubview(view, positioned: .below, relativeTo: nameLabel)
+                canvas.addSubview(view, positioned: .below, relativeTo: renameField)
                 views[id] = view
                 return view
             }()
@@ -414,7 +422,6 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
 
     func appDragged(_ id: String, to center: CGPoint) {
         guard !previewing else { return }
-        nameLabel.isHidden = true
         restTimer?.invalidate()
         let fromPinned = drag?.fromPinned ?? store.isPinned(id)
         if drag == nil {
@@ -441,7 +448,7 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         if let view = views[id] {
             let size = target == .recent || target == .hide ? recentSize : pinnedSize
             view.place(center: center, size: size, animated: false)
-            canvas.addSubview(view, positioned: .below, relativeTo: nameLabel)
+            canvas.addSubview(view, positioned: .below, relativeTo: renameField)
         }
     }
 
@@ -457,30 +464,61 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         layout(animated: true)
     }
 
-    /// A moment's hover shows its name under it.
     /// Still on it for Preferences' delay — it opens (opt-out in Preferences). Only after a move:
     /// the cursor warped onto an icon at open opens nothing.
     func appCursorMoved(_ id: String) {
         restTimer?.invalidate()
-        guard Preferences.appsOpenOnRest, drag == nil, !previewing, query.isEmpty else { return }
+        guard Preferences.appsOpenOnRest, drag == nil, renaming == nil, !previewing, query.isEmpty else { return }
         restTimer = Timer.scheduledTimer(withTimeInterval: Double(Preferences.appsRestDelay) / 1000, repeats: false) { [weak self] _ in
             guard let self = self, self.isOpen, self.drag == nil, self.query.isEmpty, NSEvent.pressedMouseButtons == 0 else { return }
             self.openApp(id)
         }
     }
 
-    func appHovered(_ id: String, _ inside: Bool) {
+    func appHovered(_ id: String, _ inside: Bool) { restTimer?.invalidate() }
+
+    /// A menu: its own name, Rename…, Reset name.
+    func appRightClicked(_ id: String) {
+        guard drag == nil, !previewing else { return }
         restTimer?.invalidate()
-        nameLabel.isHidden = true
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.addItem(withTitle: ownName(id), action: nil, keyEquivalent: "").isEnabled = false
+        menu.addItem(.separator())
+        for (title, action, enabled) in [("Rename…", #selector(rename(_:)), true), ("Reset name", #selector(resetName(_:)), store.names[id] != nil)] {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.representedObject = id
+            item.isEnabled = enabled
+        }
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
-    /// Its name under it, till the cursor leaves it.
-    func appRightClicked(_ id: String) {
-        guard drag == nil, !previewing, let view = views[id] else { return }
-        nameLabel.stringValue = name(id)
-        nameLabel.sizeToFit()
-        nameLabel.frame.origin = CGPoint(x: view.frame.midX - nameLabel.frame.width / 2, y: view.frame.maxY + 10)
-        nameLabel.isHidden = false
+    // - Rename: the name in a field under the icon, the letters redrawn as it's typed; ⏎ saves, esc cancels, empty — its own
+
+    @objc private func rename(_ item: NSMenuItem) {
+        guard let id = item.representedObject as? String, let view = views[id] else { return }
+        renameField.stringValue = name(id)
+        renaming = id
+        renameField.frame = CGRect(x: view.frame.midX - 80, y: view.frame.maxY + 8, width: 160, height: 22)
+        renameField.isHidden = false
+        makeFirstResponder(renameField)
+    }
+
+    @objc private func resetName(_ item: NSMenuItem) {
+        guard let id = item.representedObject as? String else { return }
+        store.names[id] = nil
+        store.save()
+        layout(animated: false)
+    }
+
+    private func endRename(save: Bool) {
+        guard let id = renaming else { return }
+        if save { store.names[id] = name(id) == ownName(id) ? nil : name(id); store.save() }
+        renaming = nil
+        renameField.isHidden = true
+        makeFirstResponder(canvas)
+        layout(animated: false)
     }
 
     // - Search: fuzzy, a dropdown list under the field; ↑↓ move, ↩ opens, esc clears then closes
@@ -530,15 +568,16 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         29: "0", 18: "1", 19: "2", 20: "3", 21: "4", 23: "5", 22: "6", 26: "7", 28: "8", 25: "9",
     ]
 
-    /// Each app's shortest start of its name — the vendor dropped, A–Z and 0–9 only — no other app's starts with.
-    private func makeLetters(_ ids: [String]) -> [String: String] {
+    /// Each app's shortest start of its name — the vendor dropped, A–Z and 0–9 only — no other app's starts with,
+    /// nor any of `avoiding`: `S` Safari pinned, `SL` Slack.
+    private func makeLetters(_ ids: [String], avoiding: [String] = []) -> [String: String] {
         let keys = Dictionary(uniqueKeysWithValues: ids.map { id -> (String, String) in
             let name = name(id).replacingOccurrences(of: #"^(Microsoft|Google|Adobe|Apple|JetBrains)\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
             return (id, String(name.uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }))
         }).filter { !$0.value.isEmpty }
         return keys.mapValues { key in
             var n = 1
-            while n < key.count, keys.values.filter({ $0.hasPrefix(key.prefix(n)) }).count > 1 { n += 1 }
+            while n < key.count, keys.values.filter({ $0.hasPrefix(key.prefix(n)) }).count > 1 || avoiding.contains(where: { $0.hasPrefix(key.prefix(n)) }) { n += 1 }
             return String(key.prefix(n))
         }
     }
@@ -569,7 +608,7 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         let candidates = Set(installed.keys).union(running.keys).union(store.rows.flatMap { $0 })
         let hits = candidates.compactMap { id -> (id: String, name: String, score: Int)? in
             let name = name(id)
-            return fuzzyScore(name).map { (id, name, $0) }
+            return [name, ownName(id)].compactMap(fuzzyScore).max().map { (id, name, $0) }
         }.sorted {
             (-$0.score, store.isPinned($0.id) ? 0 : 1, -(lastUsed[$0.id] ?? 0), $0.name) < (-$1.score, store.isPinned($1.id) ? 0 : 1, -(lastUsed[$1.id] ?? 0), $1.name)
         }.prefix(8)
@@ -581,9 +620,18 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         layout(animated: false)
     }
 
-    func controlTextDidChange(_ notification: Notification) { search() }
+    func controlTextDidChange(_ notification: Notification) { notification.object as? NSTextField === renameField ? layout(animated: false) : search() }
+
+    func controlTextDidEndEditing(_ notification: Notification) { if notification.object as? NSTextField === renameField { endRename(save: true) } }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        if control === renameField {
+            switch selector {
+            case #selector(NSResponder.insertNewline(_:)): endRename(save: true); return true
+            case #selector(NSResponder.cancelOperation(_:)): endRename(save: false); return true
+            default: return false
+            }
+        }
         switch selector {
         case #selector(NSResponder.moveDown(_:)): results.move(1); return true
         case #selector(NSResponder.moveUp(_:)): results.move(-1); return true

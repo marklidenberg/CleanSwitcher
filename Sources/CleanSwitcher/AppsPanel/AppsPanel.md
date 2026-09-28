@@ -21,12 +21,15 @@ screen; or, with «Open near the cursor», centered on the cursor, kept on the s
   (gone with Esc, or once Preferences closes or loses focus).
 - Typing turns the box into the search: the field, the list under it.
   CleanSwitcher is among the results: chosen, it opens its settings.
-- Hover: a plate behind the icon (like Cmd+Tab's), a white glow, or nothing; a right
-  click shows the app's name.
+- Hover: a plate behind the icon (like Cmd+Tab's), a white glow, or nothing.
+- Right click: a menu — the app's name, Rename…, Reset name. Rename: a field under the
+  icon, the letters redrawn as you type; ⏎ saves, esc cancels, empty — its own name.
+  The search finds an app by both names.
 - Letters (optional): each icon's shortest name start no other app shares, in a chip
   (`CH` Chrome, `CL` Claude; the vendor dropped — `E` Excel). Typed, the others fade;
   an app's letters complete — it opens: after a pause (a key more — the search), or at
-  once (no search). On every icon or the pinned only. Keys by place — any layout.
+  once (no search). The pinned's among themselves; the recent's too (optional) — none a
+  pinned one's start (`S` Safari pinned, `SL` Slack). Keys by place — any layout.
 - A click off the box closes it — it passes through to what's under.
 - The cursor stopped on an icon a while (200 ms by default) opens it (a checkbox, on by default; the delay a slider) —
   only after a move: the cursor warped onto an icon at open opens nothing.
@@ -47,4 +50,4 @@ screen; or, with «Open near the cursor», centered on the cursor, kept on the s
 
 ## State
 
-`AppsStore`, JSON in `Preferences.appsState`: `rows`, `slots`, `hidden`.
+`AppsStore`, JSON in `Preferences.appsState`: `rows`, `slots`, `hidden`, `names`.
