@@ -76,6 +76,9 @@ class AppListProvider {
         UserDefaults.standard.set(stats.mapValues { [Double($0.count), $0.lastFocus] }, forKey: focusStatsKey)
     }
 
+    /// Each app's last focus, seconds since 1970 — by bundle id.
+    static func lastFocusTimes() -> [String: TimeInterval] { loadFocusStats().mapValues(\.lastFocus) }
+
     private static func recordFocus(_ bundleId: String) {
         var stats = loadFocusStats()
         var stat = stats[bundleId] ?? FocusStat(count: 0, lastFocus: 0)

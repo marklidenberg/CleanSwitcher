@@ -11,6 +11,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
     private var mode: Mode = .apps
     private var hotkeyManager: HotkeyManager!
     private var panel: AppSwitcherPanel!
+    private var appsPanel: AppsPanel!
+    private let gestures = GestureMonitor()
     // PIDs currently shown — used to append newly-launched apps during the live
     // refresh without duplicating what's on screen.
     private var shownPIDs: Set<pid_t> = []
@@ -61,6 +63,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         hotkeyManager.delegate = self
         panel = AppSwitcherPanel()
         panel.panelDelegate = self
+        appsPanel = AppsPanel()
+        appsPanel.onOpenSettings = { [weak self] in self?.showPreferences() }
+
+        // - Trackpad: a swipe per command, as set in Preferences — the Apps panel, or straight to the recent app / window
+
+        gestures.onSwipe = { [weak self] fingers, swipe in
+            guard let self = self, self.state == .idle else { return }
+            if Preferences.appsGesture?.matches(fingers: fingers, swipe) == true { self.appsPanel.toggle() }
+            else if Preferences.appSwitcherGesture?.matches(fingers: fingers, swipe) == true { self.appsPanel.dismiss(); self.switchToRecentApp() }
+            else if Preferences.windowSwitcherGesture?.matches(fingers: fingers, swipe) == true { self.appsPanel.dismiss(); self.switchToRecentWindow() }
+        }
+        gestures.start()
         NSApp.setActivationPolicy(.accessory)  // no Dock icon
 
         // - Settings and login item
@@ -81,12 +95,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         prefsWindowController = PreferencesWindowController()
         prefsWindowController.onToggleMenuBar = { [weak self] _ in self?.refreshStatusItem() }
         prefsWindowController.onChangeHotkeys = { [weak self] in self?.reconcileHotkeys() }
+        prefsWindowController.onChangeAppsLook = { [weak self] in self?.appsPanel.preview() }
+        prefsWindowController.onEndSample = { [weak self] in self?.appsPanel.endPreview() }
         prefsWindowController.onRecordingShortcut = { [weak self] isRecording in
             guard let self = self else { return }
             if isRecording {
                 // Free every candidate combo so the recorder receives it as a key event
                 self.hotkeyManager.setAppShortcut(nil)
                 self.hotkeyManager.setWindowShortcut(nil)
+                self.hotkeyManager.setAppsShortcut(nil)
                 setNativeCommandTabEnabled(false)
             } else {
                 self.reconcileHotkeys()
@@ -193,9 +210,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         if let window = (main + secondary).dropFirst().first { activateItem(.window(window)) }
     }
 
+    /// The Apps shortcut: the Apps panel, from idle.
+    func appsHotkeyTriggered() {
+        guard state == .idle else { return }
+        appsPanel.toggle()
+    }
+
     /// Open the app switcher. Forward selects the second recent app (quick Alt-Tab
     /// back-and-forth); reverse selects the last. Secondary starts hidden.
     private func openPanel(reverse: Bool) {
+        appsPanel.dismiss()
         let (main, secondary) = AppListProvider.getSplitApps()
         guard !main.isEmpty else {
             print("No visible apps to switch to")
@@ -225,6 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
             if state == .idle { hotkeyManager.isActive = false }
             return
         }
+        appsPanel.dismiss()
         let (mainWindows, secondaryWindows) = WindowListProvider.splitWindows(for: app)
         let total = mainWindows.count + secondaryWindows.count
 
@@ -417,6 +442,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate, AppSw
         let ownsWindow = switchingEnabled || Preferences.windowSwitcherMode == .disabled
         hotkeyManager.setAppShortcut(ownsApp ? Preferences.appSwitcherShortcut : nil)
         hotkeyManager.setWindowShortcut(ownsWindow ? Preferences.windowSwitcherShortcut : nil)
+        hotkeyManager.setAppsShortcut(Preferences.appsEnabled ? Preferences.appsShortcut : nil)  // a combo needs no permission; a tap, the event tap
+        gestures.start()  // its scroll-dropping tap, once permitted
         setNativeCommandTabEnabled(!(ownsApp && Preferences.appSwitcherShortcut == .defaultAppSwitcher), CGSSymbolicHotKey.appSwitcher)
         setNativeCommandTabEnabled(!(ownsWindow && Preferences.windowSwitcherShortcut == .defaultWindowSwitcher), CGSSymbolicHotKey.windowSwitcher)
     }

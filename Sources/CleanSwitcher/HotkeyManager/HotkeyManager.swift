@@ -17,6 +17,8 @@ protocol HotkeyManagerDelegate: AnyObject {
     /// "select previous".
     func shiftTapped()
     func mouseClicked()
+    /// The Apps shortcut.
+    func appsHotkeyTriggered()
 }
 
 /// Global hotkeys + the modifier/mouse event tap. See HotkeyManager.md.
@@ -32,6 +34,11 @@ class HotkeyManager {
     private var windowShortcut: Shortcut?
     private var appHotKeyRefs: [EventHotKeyRef] = []
     private var windowHotKeyRefs: [EventHotKeyRef] = []
+    private var appsShortcut: Shortcut?
+    private var appsHotKeyRefs: [EventHotKeyRef] = []
+    // The Apps shortcut as a lone modifier tap (tap thread): its down, and the key / click counts then
+    private var _appsTap: Shortcut?  // stateQueue only
+    private var appsTapStart: (at: TimeInterval, keys: UInt32, clicks: UInt32)?
     private var activeHotKeyRefs: [EventHotKeyRef?] = []
     // The shortcut that opened the panel — its modifiers keep it open (main only).
     private var holdShortcut = Shortcut.defaultAppSwitcher
@@ -94,6 +101,7 @@ class HotkeyManager {
         case t = 15
         case tabNavigate = 16       // Tab while active, when the app shortcut isn't Tab
         case shiftTabNavigate = 17
+        case apps = 18
     }
 
     // Hotkeys that map to a delegate keyPressed(_:) call.
@@ -111,9 +119,9 @@ class HotkeyManager {
         HotkeyID.t.rawValue: UInt16(kVK_ANSI_T),
     ]
 
-    // Ordinary hold+key combos with no switcher action. Registered as no-op Carbon
+    // Every hold+key combo but the shortcut's own step. Registered as no-op Carbon
     // hotkeys while the panel is open so they're swallowed instead of leaking to
-    // the app behind it. Excludes the action keys and W/T (registered separately).
+    // the app behind it.
     private static let swallowKeyCodes: [Int] = [
         kVK_ANSI_A, kVK_ANSI_S, kVK_ANSI_D, kVK_ANSI_F, kVK_ANSI_G, kVK_ANSI_Z,
         kVK_ANSI_X, kVK_ANSI_C, kVK_ANSI_V, kVK_ANSI_B, kVK_ANSI_E,
@@ -125,6 +133,7 @@ class HotkeyManager {
         kVK_ANSI_Backslash, kVK_ANSI_Semicolon, kVK_ANSI_Quote, kVK_ANSI_Comma,
         kVK_ANSI_Period, kVK_ANSI_Slash,
         kVK_Space, kVK_Delete, kVK_ForwardDelete,
+        kVK_ANSI_H, kVK_ANSI_Q, kVK_ANSI_W, kVK_ANSI_T, kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow, kVK_Escape, kVK_Return,
     ]
 
     // Hold-to-repeat state (holdRepeatQueue only).
@@ -138,6 +147,7 @@ class HotkeyManager {
 
         setAppShortcut(nil)
         setWindowShortcut(nil)
+        setAppsShortcut(nil)
 
         // - Unregister the active-only hotkeys and stop repeats
 
@@ -176,13 +186,10 @@ class HotkeyManager {
         let eventTarget = GetEventDispatcherTarget()
         let modifiers = holdShortcut.carbonModifiers
 
-        // - Action hotkeys
+        // - The one action: the configured shortcut's own step, forward and back — no H/Q/W/T,
+        //   arrows, Return or Esc (swallowed below)
 
         let hotkeys: [(HotkeyID, Int, Int)] = [
-            (.h, kVK_ANSI_H, modifiers), (.q, kVK_ANSI_Q, modifiers), (.w, kVK_ANSI_W, modifiers), (.t, kVK_ANSI_T, modifiers),
-            (.leftArrow, kVK_LeftArrow, modifiers), (.rightArrow, kVK_RightArrow, modifiers),
-            (.upArrow, kVK_UpArrow, modifiers), (.downArrow, kVK_DownArrow, modifiers),
-            (.escape, kVK_Escape, modifiers), (.returnKey, kVK_Return, modifiers),
             (.tabNavigate, kVK_Tab, modifiers), (.shiftTabNavigate, kVK_Tab, modifiers | shiftKey),
         ]
         for (hotkeyID, keyCode, keyModifiers) in hotkeys {
@@ -244,6 +251,9 @@ class HotkeyManager {
             tabSeenDuringShift = true
             DispatchQueue.main.async { self.delegate?.hotkeyTriggeredWindowsReverse() }
 
+        case HotkeyID.apps.rawValue:
+            DispatchQueue.main.async { self.delegate?.appsHotkeyTriggered() }
+
         default:
             if let keyCode = HotkeyManager.hotkeyToKeyCode[id] {
                 DispatchQueue.main.async { self.delegate?.keyPressed(keyCode) }
@@ -286,12 +296,6 @@ class HotkeyManager {
                 action = shift
                     ? { [weak self] in self?.delegate?.hotkeyTriggeredReverse() }
                     : { [weak self] in self?.delegate?.hotkeyTriggered() }
-            } else if down(kVK_LeftArrow) {
-                code = kVK_LeftArrow
-                action = { [weak self] in self?.delegate?.keyPressed(UInt16(kVK_LeftArrow)) }
-            } else if down(kVK_RightArrow) {
-                code = kVK_RightArrow
-                action = { [weak self] in self?.delegate?.keyPressed(UInt16(kVK_RightArrow)) }
             }
 
             guard code != 0, let action = action else {
@@ -366,6 +370,45 @@ class HotkeyManager {
         windowShortcut = shortcut
     }
 
+    /// The Apps shortcut: a combo — a Carbon hotkey; a tap — watched by the event tap
+    /// (needs Accessibility). nil unregisters. Idempotent.
+    func setAppsShortcut(_ shortcut: Shortcut?) {
+        guard shortcut != appsShortcut else { return }
+        appsHotKeyRefs.forEach { UnregisterEventHotKey($0) }
+        appsHotKeyRefs = []
+        appsShortcut = shortcut
+        stateQueue.sync { _appsTap = shortcut?.isTap == true ? shortcut : nil }
+        guard let shortcut = shortcut, !shortcut.isTap else { return }
+        installHotkeyHandlerIfNeeded()
+        appsHotKeyRefs = shortcut.keyCodes.compactMap { keyCode in
+            var ref: EventHotKeyRef?
+            let id = EventHotKeyID(signature: HotkeyManager.signature, id: HotkeyID.apps.rawValue)
+            RegisterEventHotKey(UInt32(keyCode), UInt32(shortcut.carbonModifiers), id, GetEventDispatcherTarget(), UInt32(kEventHotKeyNoOptions), &ref)
+            return ref
+        }
+    }
+
+    /// A lone modifier, down and up within 350ms, no key pressed and no click between —
+    /// told by the system's own counters, no Input Monitoring needed. Tap thread.
+    private func checkAppsTap(_ event: CGEvent) {
+        guard let tap = stateQueue.sync(execute: { _appsTap }) else { return }
+        let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
+        let modifiers = event.flags.intersection([.maskCommand, .maskAlternate, .maskControl, .maskShift])
+        let keys = CGEventSource.counterForEventType(.combinedSessionState, eventType: .keyDown)
+        let clicks = CGEventSource.counterForEventType(.combinedSessionState, eventType: .leftMouseDown) + CGEventSource.counterForEventType(.combinedSessionState, eventType: .rightMouseDown)
+        let own: CGEventFlags = [kVK_Option, kVK_RightOption].contains(tap.keyCode) ? .maskAlternate : .maskCommand
+        if keyCode == tap.keyCode, modifiers == own {
+            appsTapStart = (ProcessInfo.processInfo.systemUptime, keys, clicks)
+        } else if let start = appsTapStart, modifiers.isEmpty, keyCode == tap.keyCode {
+            appsTapStart = nil
+            if ProcessInfo.processInfo.systemUptime - start.at <= 0.35, keys == start.keys, clicks == start.clicks {
+                DispatchQueue.main.async { self.delegate?.appsHotkeyTriggered() }
+            }
+        } else {
+            appsTapStart = nil  // another modifier joined
+        }
+    }
+
     /// Carbon needs an exact modifier match, so the Shift variant is its own registration.
     private func registerGlobalHotkeys(_ shortcut: Shortcut, _ hotkeyID: HotkeyID, reverse reverseID: HotkeyID) -> [EventHotKeyRef] {
         installHotkeyHandlerIfNeeded()
@@ -412,6 +455,7 @@ class HotkeyManager {
             let manager = Unmanaged<HotkeyManager>.fromOpaque(userInfo).takeUnretainedValue()
 
             if type == .flagsChanged {
+                if !manager.isActive { manager.checkAppsTap(event) }
                 let flags = event.flags
                 let shiftIsDown = flags.contains(.maskShift)
                 let holdIsDown = flags.contains(manager.holdFlags)

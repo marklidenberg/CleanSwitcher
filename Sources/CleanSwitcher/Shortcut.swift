@@ -11,6 +11,12 @@ struct Shortcut: Equatable {
     static let holdModifiers: NSEvent.ModifierFlags = [.command, .option, .control]
     static let defaultAppSwitcher = Shortcut(keyCode: kVK_Tab, modifiers: .command)
     static let defaultWindowSwitcher = Shortcut(keyCode: kVK_ANSI_Grave, modifiers: .command)
+    static let defaultApps = Shortcut(keyCode: kVK_Space, modifiers: .option)
+
+    /// The modifier keys the Apps shortcut can be, tapped alone — its key code, no modifiers.
+    static let tapKeys: [Int: String] = [kVK_Option: "Left ⌥", kVK_RightOption: "Right ⌥", kVK_Command: "Left ⌘", kVK_RightCommand: "Right ⌘"]
+
+    var isTap: Bool { Shortcut.tapKeys[keyCode] != nil }
 
     init(keyCode: Int, modifiers: NSEvent.ModifierFlags) {
         self.keyCode = keyCode
@@ -39,6 +45,7 @@ struct Shortcut: Equatable {
 
     /// "⌘ Tab", "⌃ ⌥ Q"; `reverse` adds ⇧.
     func displayString(reverse: Bool = false) -> String {
+        if let tap = Shortcut.tapKeys[keyCode] { return "\(tap) (tap)" }
         let symbols = [(NSEvent.ModifierFlags.control, "⌃"), (.option, "⌥"), (.command, "⌘")]
             .filter { modifiers.contains($0.0) }.map { $0.1 }
         return (symbols + (reverse ? ["⇧"] : []) + [keyName]).joined(separator: " ")

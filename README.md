@@ -4,6 +4,8 @@ A minimal Cmd+Tab replacement for macOS.
 
 - Hides apps you haven't used recently
 - Clean vertical window switcher
+- Apps: your pinned and recent apps, one shortcut away — ⌥ Space, or a lone ⌥ / ⌘ tap
+- Trackpad: a 3- or 4-finger swipe (↔ ← → ↕ ↑ ↓) for Apps, the recent app or the recent window (Preferences)
 
 ## Install
 
@@ -19,12 +21,9 @@ Ad-hoc signed, not notarized.
 |-----|--------|
 | Cmd+Tab | Open app switcher |
 | Cmd+«key left of 1» | Open window switcher |
-| Cmd+T | Toggle older apps |
-| Cmd+H | Hide other apps |
-| Cmd+Q | Quit app |
-| Cmd+W | Close window |
+| Option+Space | Open Apps |
 
-The two switcher shortcuts can be changed in Preferences.
+These, and nothing else: while a switcher is open, only its own key steps (+ Shift back). All three can be changed in Preferences.
 
 ## How it looks
 

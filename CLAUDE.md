@@ -22,6 +22,7 @@ shared files at the top level:
 AppDelegate/         coordinator + state machine; private: permission, menu bar, prefs window, new-window maximizer
 HotkeyManager/       Carbon hotkeys + .listenOnly CGEvent tap + auto-repeat; private: SwitcherConfig
 AppSwitcherPanel/    the panel UI; private: AppItemView
+AppsPanel/           the Apps panel (⌥ Space): pinned rows + recent slots, search; private: AppIconView, AppsStore
 AppListProvider      MRU apps, recency split, Dock badges
 WindowListProvider   per-app windows via AX, recency split, focus tracker
 SwitcherItem         one panel tile (app or window)
@@ -37,8 +38,8 @@ Needs Accessibility permission (not Input Monitoring). Without it, native Cmd+Ta
 ## Shortcuts
 
 - **Cmd+Tab** — app switcher. **Cmd+«key left of 1»** — window switcher. Both configurable in Preferences.
-- Tab / Shift+Tab / arrows navigate (hold to repeat). **T** toggles older-apps section.
-- **Return** or release Cmd activates; **Escape** dismisses. **H** hide others, **Q** quit app, **W** close window.
+- While open, only the shortcut's own key steps (+ Shift back, hold to repeat); every other hold+key is swallowed. Releasing the modifier activates; a click outside dismisses.
+- **⌥ Space** — the Apps panel: pinned apps, recent ones under a line, a search. Set in Preferences: a combo, or a lone ⌥ / ⌘ tap (needs the event tap).
 
 # lessmore conventions
 

@@ -55,3 +55,12 @@ without a working replacement:
   macOS doesn't reliably deliver on revoke). On revocation it restores native
   Cmd+Tab and **quits** — terminating is the only reliable way to release the tap
   and clear the macOS input-freeze bug.
+
+Trackpad gestures (opt-in, per command): 3 or 4 fingers, ↔ ← → ↕ ↑ ↓. The Apps
+panel's toggles it; a switcher's goes straight to the recent app / window, as
+"Recent only" does — read off the private
+MultitouchSupport framework, no permission. macOS's own swipe between full-screen
+apps uses the same fingers: turn it off in System Settings → Trackpad, or pick the
+other count. A swipe heading a configured way is claimed early (2% of the pad): its
+scroll and gesture events are dropped (an event tap, Accessibility); every other
+swipe — e.g. 3 fingers ↓ for App Exposé — goes on to the system.
