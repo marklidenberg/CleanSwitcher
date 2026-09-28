@@ -252,8 +252,8 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
         return image
     }
 
-    /// Activate it, or launch it. The panel goes once the app is in front — hiding it
-    /// first would flash the app behind for a moment.
+    /// Activate it; reopen it — running, windowless: it makes a window, as from the Dock; or launch it.
+    /// The panel goes once the app is in front — hiding it first would flash the app behind for a moment.
     private func openApp(_ id: String) {
         guard !previewing else { return }
         opening = true
@@ -262,7 +262,7 @@ final class AppsPanel: NSPanel, NSTextFieldDelegate, AppIconViewDelegate {
             dismiss()
             return onOpenSettings?() ?? ()
         }
-        if let app = running[id] {
+        if let app = running[id], !WindowListProvider.windows(for: app).isEmpty {
             app.unhide()
             if app.isActive { return dismiss() }  // in front already: no activation comes
             app.activate(options: [.activateIgnoringOtherApps])

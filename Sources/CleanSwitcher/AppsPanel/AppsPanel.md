@@ -1,7 +1,7 @@
 # AppsPanel
 
 A panel of apps over the screen under the mouse, toggled by the Apps shortcut
-(⌥ Space by default). Click an icon — the app activates or launches.
+(⌥ Space by default). Click an icon — the app activates, reopens (running, windowless) or launches.
 
 ## Layout
 
